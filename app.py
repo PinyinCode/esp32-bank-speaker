@@ -231,7 +231,7 @@ ADMIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRA CỨU & CẤU HÌNH CHO USER (CÓ WEBHOOK & KEY) ---
+# --- GIAO DIỆN TRA CỨU & CẤU HÌNH CHO USER ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -367,7 +367,7 @@ USER_PORTAL_HTML = """
             copyText.select();
             copyText.setSelectionRange(0, 99999);
             navigator.clipboard.writeText(copyText.value);
-            alert("Đã sao chép: " + copyText.value);
+            alert("Đã sao chép thành công!");
         }
     </script>
 </body>
@@ -395,6 +395,7 @@ def login_authorize():
     return redirect(github_auth_url)
 
 
+# --- ĐÃ BỔ SUNG LẠI HÀM CALLBACK GITHUB OAUTH ---
 @app.route("/login/callback")
 def callback():
     code = request.args.get("code")
@@ -472,7 +473,6 @@ def admin_add():
             )
             device = get_device(mac)
             
-            # Tự động tạo SePay Secret nếu thiết bị mới chưa có
             sepay_secret = device.get("sepay_secret") if device else None
             if not sepay_secret:
                 sepay_secret = f"whsec_{uuid.uuid4().hex}"
@@ -586,7 +586,6 @@ def user_check_device():
 
     status = "active" if now <= expiry_time else "expired"
 
-    # Đảm bảo thiết bị có sepay_secret, nếu chưa có thì tự sinh ra ngay lúc tra cứu
     sepay_secret = device_info.get("sepay_secret")
     if not sepay_secret:
         sepay_secret = f"whsec_{uuid.uuid4().hex}"
@@ -711,7 +710,7 @@ def check_update():
     return jsonify({"update_available": False})
 
 
-# --- API NHẬN WEBHOOK TỪ SEPAY (CÓ KIỂM TRA WHITELIST MAC) ---
+# --- API NHẬN WEBHOOK TỪ SEPAY ---
 @app.route("/api/bank-webhook/<path:mac>", methods=["POST"])
 def bank_webhook(mac):
     if devices_collection is None:
