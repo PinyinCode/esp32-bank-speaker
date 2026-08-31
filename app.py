@@ -97,6 +97,8 @@ USER_PORTAL_HTML = """
                 const data = await response.json();
 
                 if (response.ok) {
+                    document.getElementById('webhookResultinnerText = data.webhook_url;
+                    // Sửa lại đúng id lấy dữ liệu sepay_secret trả về từ server
                     document.getElementById('webhookResult').innerText = data.webhook_url;
                     document.getElementById('sepaySecretResult').innerText = data.sepay_secret;
                     document.getElementById('tokenResult').innerText = data.device_token;
@@ -115,7 +117,7 @@ USER_PORTAL_HTML = """
 def home():
     return render_template_string(USER_PORTAL_HTML)
 
-# --- 1. API KHÁCH HÀNG ĐĂNG KÝ MAC (TỰ TẠO TOKEN & SEPAY SECRET RIÊNG) ---
+# --- 1. API KHÁCH HÀNG ĐĂNG KÝ MAC ---
 @app.route("/api/user/register", methods=["POST"])
 def user_register():
     if devices_collection is None:
@@ -131,10 +133,14 @@ def user_register():
     existing_device = devices_collection.find_one({"_id": mac_clean})
     if existing_device:
         device_token = existing_device.get("device_token")
+        # Nếu thiết bị cũ chưa có sepay_secret thì tự sinh bù vào
         sepay_secret = existing_device.get("sepay_secret")
+        if not sepay_secret:
+            sepay_secret = uuid.uuid4().hex
+            devices_collection.update_one({"_id": mac_clean}, {"$set": {"sepay_secret": sepay_secret}})
     else:
         device_token = str(uuid.uuid4())
-        sepay_secret = uuid.uuid4().hex # Tạo một secret key ngẫu nhiên riêng cho khách này
+        sepay_secret = uuid.uuid4().hex
         devices_collection.insert_one({
             "_id": mac_clean,
             "device_token": device_token,
@@ -153,7 +159,7 @@ def user_register():
         "device_token": device_token
     })
 
-# --- 2. API WEBHOOK NHẬN TỪ SEPAY (XÁC THỰC BẰNG SECRET RIÊNG CỦA MAC ĐÓ) ---
+# --- 2. API WEBHOOK NHẬN TỪ SEPAY ---
 @app.route("/api/bank-webhook/<path:mac>", methods=["POST"])
 def bank_webhook(mac):
     if devices_collection is None:
@@ -165,20 +171,20 @@ def bank_webhook(mac):
     if not device:
         return jsonify({"success": False, "error": "Device MAC not registered"}), 404
         
-    # Lấy Secret Key riêng của thiết bị này từ MongoDB
     sepay_secret = device.get("sepay_secret", "")
 
-    # Xác thực chữ ký HMAC-SHA256
     signature = request.headers.get("X-SePay-Signature", "")
     raw_body = request.get_data()
-    computed_signature = hmac.new(
-        sepay_secret.encode("utf-8"),
-        raw_body,
-        hashlib.sha256
-    ).hexdigest()
     
-    if signature and not hmac.compare_digest(signature, computed_signature):
-        return jsonify({"success": False, "error": "Invalid signature"}), 401
+    if sepay_secret:
+        computed_signature = hmac.new(
+            sepay_secret.encode("utf-8"),
+            raw_body,
+            hashlib.sha256
+        ).hexdigest()
+        
+        if signature and not hmac.compare_digest(signature, computed_signature):
+            return jsonify({"success": False, "error": "Invalid signature"}), 401
 
     data = request.get_json() or {}
     amount = data.get("transferAmount", 0)
