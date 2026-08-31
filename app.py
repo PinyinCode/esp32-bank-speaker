@@ -24,7 +24,6 @@ try:
         devices_collection = db["bank_devices"]
         
         # TẠO TTL INDEX CHO MẢNG NOTIFICATIONS (Tự động xóa sau 24 giờ = 86400 giây)
-        # MongoDB sẽ tự động dọn dẹp các phần tử trong mảng notifications quá hạn
         try:
             devices_collection.create_index(
                 [("notifications.created_at", 1)],
@@ -32,7 +31,7 @@ try:
             )
             print("✓ Đã cấu hình tự động xóa thông báo sau 24 giờ (TTL Index)!")
         except Exception as idx_err:
-            print(f"⚠️ Không thể tạo TTL Index (có thể do quyền hạn): {idx_err}")
+            print(f"⚠️ Không thể tạo TTL Index: {idx_err}")
 
         print("✓ Kết nối MongoDB thành công!")
     else:
@@ -148,7 +147,7 @@ def user_register():
         "device_token": device_token
     })
 
-# --- 2. API WEBHOOK NHẬN TỪ SEPAY (CÓ HMAC & LƯU MONGODB KÈM THỜI GIAN) ---
+# --- 2. API WEBHOOK NHẬN TỪ SEPAY ---
 @app.route("/api/bank-webhook/<path:mac>", methods=["POST"])
 def bank_webhook(mac):
     if devices_collection is None:
@@ -181,7 +180,6 @@ def bank_webhook(mac):
         message = f"Tài khoản đã nhận {amount_int:,} đồng. Nội dung: {content}"
         print(f"[BANK ALERT cho MAC {mac_clean}] {message}")
         
-        # Đẩy thông báo kèm theo mốc thời gian UTC hiện tại để tính mốc 24h tự xóa
         devices_collection.update_one(
             {"_id": mac_clean},
             {
@@ -189,7 +187,7 @@ def bank_webhook(mac):
                     "notifications": {
                         "amount": amount_int,
                         "message": message,
-                        "created_at": datetime.now(timezone.utc) # Lưu thời gian hiện tại
+                        "created_at": datetime.now(timezone.utc)
                     }
                 }
             }
@@ -205,7 +203,6 @@ def check_bank_audio():
     if devices_collection is None:
         return jsonify({"has_notification": False, "error": "Database error"}), 500
 
- ng_mac = request.args.get("mac")
     mac_address = request.args.get("mac")
     token = request.args.get("token")
     
