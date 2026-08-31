@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template_string
+from flask import Flask, jsonify, request, render_template_string, abort
 import requests
 import os
 import hmac
@@ -161,13 +161,13 @@ def user_register():
             device_token = existing_device.get("device_token")
             sepay_secret = existing_device.get("sepay_secret")
             
-            # Đảm bảo có tiền tố whsec_ đúng chuẩn
+            # Tạo mới hoặc đồng bộ khóa có tiền tố whsec_ đúng chuẩn
             if not sepay_secret or not sepay_secret.startswith("whsec_"):
                 sepay_secret = f"whsec_{uuid.uuid4().hex}"
                 devices_collection.update_one({"_id": mac_clean}, {"$set": {"sepay_secret": sepay_secret}})
         else:
             device_token = str(uuid.uuid4())
-            sepay_secret = f"whsec_{uuid.uuid4().hex}" # Tạo khóa bí mật có tiền tố whsec_
+            sepay_secret = f"whsec_{uuid.uuid4().hex}"
             devices_collection.insert_one({
                 "_id": mac_clean,
                 "device_token": device_token,
@@ -200,18 +200,26 @@ def bank_webhook(mac):
     if not device:
         return jsonify({"success": False, "error": "Device MAC not registered"}), 404
         
-    sepay_secret = device.get("sepay_secret", "whsec_default_secret")
+    sepay_secret = device.get("sepay_secret", "")
 
-    # Xác thực chữ ký HMAC-SHA256
+    # Xác thực chữ ký HMAC-SHA256 theo chuẩn SePay (timestamp + raw_body)
     signature = request.headers.get("X-SePay-Signature", "")
-    raw_body = request.get_data()
-    computed_signature = hmac.new(
+    timestamp = request.headers.get("X-SePay-Timestamp", "")
+    raw_body = request.get_data(as_text=True) # Lấy dạng chuỗi text thô tương thích code mẫu
+
+    # Tính lại chữ ký theo công thức: {timestamp}.{raw_body}
+    message_to_sign = f"{timestamp}.{raw_body}"
+    expected_signature = 'sha256=' + hmac.new(
         sepay_secret.encode("utf-8"),
-        raw_body,
+        message_to_sign.encode("utf-8"),
         hashlib.sha256
     ).hexdigest()
-    
-    if signature and not hmac.compare_digest(signature, computed_signature):
+
+    # So sánh an toàn chống tấn công timing attack
+    if not signature or not hmac.compare_digest(expected_signature, signature):
+        print(f"⚠️ Lỗi xác thực chữ ký SePay cho MAC {mac_clean}")
+        print(f"   - Header nhận được: {signature}")
+        print(f"   - Kỳ vọng tính toán: {expected_signature}")
         return jsonify({"success": False, "error": "Invalid signature"}), 401
 
     data = request.get_json() or {}
