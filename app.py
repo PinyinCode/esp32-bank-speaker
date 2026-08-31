@@ -4,12 +4,13 @@ import os
 import hmac
 import hashlib
 import uuid
+from datetime import datetime, timezone
 from pymongo import MongoClient
 
 app = Flask(__name__)
 
 # --- CẤU HÌNH MONGODB & BẢO MẬT ---
-MONGO_URI = os.environ.get("MONGO_URI") # Lấy chuỗi kết nối MongoDB từ biến môi trường Render
+MONGO_URI = os.environ.get("MONGO_URI") 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "default_sepay_secret")
 
 client = None
@@ -19,8 +20,20 @@ devices_collection = None
 try:
     if MONGO_URI:
         client = MongoClient(MONGO_URI)
-        db = client.get_database() # Lấy database mặc định từ URI
+        db = client["esp32_bank_db"] 
         devices_collection = db["bank_devices"]
+        
+        # TẠO TTL INDEX CHO MẢNG NOTIFICATIONS (Tự động xóa sau 24 giờ = 86400 giây)
+        # MongoDB sẽ tự động dọn dẹp các phần tử trong mảng notifications quá hạn
+        try:
+            devices_collection.create_index(
+                [("notifications.created_at", 1)],
+                expireAfterSeconds=86400
+            )
+            print("✓ Đã cấu hình tự động xóa thông báo sau 24 giờ (TTL Index)!")
+        except Exception as idx_err:
+            print(f"⚠️ Không thể tạo TTL Index (có thể do quyền hạn): {idx_err}")
+
         print("✓ Kết nối MongoDB thành công!")
     else:
         print("⚠️ Chưa cấu hình biến môi trường MONGO_URI trên Render!")
@@ -101,7 +114,7 @@ USER_PORTAL_HTML = """
 def home():
     return render_template_string(USER_PORTAL_HTML)
 
-# --- 1. API KHÁCH HÀNG ĐĂNG KÝ MAC (TỰ TẠO TOKEN BẢO MẬT & LƯU MONGODB) ---
+# --- 1. API KHÁCH HÀNG ĐĂNG KÝ MAC ---
 @app.route("/api/user/register", methods=["POST"])
 def user_register():
     if devices_collection is None:
@@ -114,12 +127,11 @@ def user_register():
         
     mac_clean = mac.strip().upper().replace(":", "")
     
-    # Kiểm tra xem thiết bị đã tồn tại trong DB chưa, nếu chưa có thì cấp mới Token
     existing_device = devices_collection.find_one({"_id": mac_clean})
     if existing_device:
         device_token = existing_device.get("device_token")
     else:
-        device_token = str(uuid.uuid4()) # Tạo chuỗi token ngẫu nhiên độc nhất
+        device_token = str(uuid.uuid4())
         devices_collection.insert_one({
             "_id": mac_clean,
             "device_token": device_token,
@@ -136,7 +148,7 @@ def user_register():
         "device_token": device_token
     })
 
-# --- 2. API WEBHOOK NHẬN TỪ SEPAY (CÓ HMAC & LƯU VÀO MONGODB) ---
+# --- 2. API WEBHOOK NHẬN TỪ SEPAY (CÓ HMAC & LƯU MONGODB KÈM THỜI GIAN) ---
 @app.route("/api/bank-webhook/<path:mac>", methods=["POST"])
 def bank_webhook(mac):
     if devices_collection is None:
@@ -144,7 +156,6 @@ def bank_webhook(mac):
 
     mac_clean = mac.strip().upper().replace(":", "")
     
-    # Kiểm tra MAC có tồn tại trong MongoDB không
     device = devices_collection.find_one({"_id": mac_clean})
     if not device:
         return jsonify({"success": False, "error": "Device MAC not registered"}), 404
@@ -170,23 +181,31 @@ def bank_webhook(mac):
         message = f"Tài khoản đã nhận {amount_int:,} đồng. Nội dung: {content}"
         print(f"[BANK ALERT cho MAC {mac_clean}] {message}")
         
-        # Đẩy thông báo mới vào mảng notifications của MAC đó trong MongoDB
+        # Đẩy thông báo kèm theo mốc thời gian UTC hiện tại để tính mốc 24h tự xóa
         devices_collection.update_one(
             {"_id": mac_clean},
-            {"$push": {"notifications": {"amount": amount_int, "message": message}}}
+            {
+                "$push": {
+                    "notifications": {
+                        "amount": amount_int,
+                        "message": message,
+                        "created_at": datetime.now(timezone.utc) # Lưu thời gian hiện tại
+                    }
+                }
+            }
         )
         
         return jsonify({"success": True, "message": f"Queued for {mac_clean}"}), 200
         
     return jsonify({"success": False, "error": "Invalid amount"}), 400
 
-# --- 3. API CHO ESP32 GỌI ĐẾN ĐỂ LẤY THÔNG BÁO (BẢO MẬT BẰNG TOKEN) ---
-# Link ESP32 gọi: https://<app>.onrender.com/api/check-bank-audio?mac=240AC4...&token=xyz...
+# --- 3. API CHO ESP32 GỌI ĐẾN ĐỂ LẤY THÔNG BÁO ---
 @app.route("/api/check-bank-audio", methods=["GET"])
 def check_bank_audio():
     if devices_collection is None:
         return jsonify({"has_notification": False, "error": "Database error"}), 500
 
+ ng_mac = request.args.get("mac")
     mac_address = request.args.get("mac")
     token = request.args.get("token")
     
@@ -195,17 +214,14 @@ def check_bank_audio():
         
     mac_clean = mac_address.strip().upper().replace(":", "")
     
-    # Tìm thiết bị và xác thực Token đúng chuẩn của chip đó
     device = devices_collection.find_one({"_id": mac_clean})
     if not device or device.get("device_token") != token:
         return jsonify({"has_notification": False, "error": "Unauthorized"}), 403
         
     notifications = device.get("notifications", [])
     if len(notifications) > 0:
-        # Lấy thông báo đầu tiên ra khỏi hàng đợi
         notif = notifications.pop(0)
         
-        # Cập nhật lại danh sách trong MongoDB (xóa thông báo vừa lấy)
         devices_collection.update_one(
             {"_id": mac_clean},
             {"$set": {"notifications": notifications}}
