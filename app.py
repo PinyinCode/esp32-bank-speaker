@@ -222,11 +222,18 @@ def bank_webhook(mac):
     data = request.get_json() or {}
     amount = data.get("transferAmount", 0)
     content = data.get("content", "")
+    gateway = data.get("gateway", "Ngân hàng")
 
     if amount and float(amount) > 0:
         amount_int = int(float(amount))
-        message = f"Tài khoản đã nhận {amount_int:,} đồng. Nội dung: {content}"
-        print(f"[BANK ALERT cho MAC {mac_clean}] {message}")
+        
+        # Câu thông báo ngắn gọn mặc định cho loa phát ra
+        audio_message = f"Tài khoản của bạn vừa nhận được {amount_int:,} đồng."
+        
+        # Thông tin chi tiết lưu lại để dùng cho lệnh MCP hoặc xem lịch sử
+        full_detail = f"Nhận {amount_int:,} đồng từ {gateway}. Nội dung: {content}"
+
+        print(f"[BANK ALERT cho MAC {mac_clean}] {audio_message}")
 
         devices_collection.update_one(
             {"_id": mac_clean},
@@ -234,7 +241,10 @@ def bank_webhook(mac):
                 "$push": {
                     "notifications": {
                         "amount": amount_int,
-                        "message": message,
+                        "message": audio_message,       # Dùng để đọc ngắn gọn trên loa
+                        "detail": full_detail,          # Dùng khi đòi xem chi tiết qua MCP
+                        "gateway": gateway,
+                        "content": content,
                         "created_at": datetime.now(timezone.utc),
                     }
                 }
@@ -286,7 +296,7 @@ def check_bank_audio():
     return jsonify({"has_notification": False})
 
 
-# --- 4. API MỚI: XEM LỊCH SỬ GIAO DỊCH GẦN NHẤT ---
+# --- 4. API XEM LỊCH SỬ GIAO DỊCH GẦN NHẤT ---
 @app.route("/api/bank-history", methods=["GET"])
 def bank_history():
     if devices_collection is None:
@@ -304,18 +314,14 @@ def bank_history():
     if not device:
         return jsonify({"transactions": []}), 404
 
-    # Lấy các thông báo từ MongoDB (sắp xếp mới nhất lên đầu nếu muốn, hoặc theo mảng hiện tại)
     notifications = device.get("notifications", [])
-    
-    # Lọc lấy số lượng giới hạn theo yêu cầu (limit)
     recent_txs = notifications[-limit:] if len(notifications) >= limit else notifications
-    # Đảo ngược lại để giao dịch mới nhất hiển thị ở trên cùng
     recent_txs.reverse()
 
     return jsonify({"transactions": recent_txs}), 200
 
 
-# --- 5. API MỚI: THỐNG KÊ TỔNG TIỀN VÀ SỐ LƯỢNG GIAO DỊCH TRONG NGÀY ---
+# --- 5. API THỐNG KÊ TỔNG TIỀN VÀ SỐ LƯỢNG GIAO DỊCH ---
 @app.route("/api/bank-stats", methods=["GET"])
 def bank_stats():
     if devices_collection is None:
