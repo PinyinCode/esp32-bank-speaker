@@ -102,7 +102,7 @@ LOGIN_HTML = """
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Đăng nhập - Quản lý OTA ESP32</title>
+    <title>Đăng nhập - Quản lý OTA & Loa ESP32</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; color: #333; }
         .login-card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); text-align: center; width: 350px; }
@@ -119,13 +119,13 @@ LOGIN_HTML = """
         <h2>Quản Trị ESP32</h2>
         <p>Vui lòng xác thực tài khoản quản trị</p>
         <a href="/login/authorize" class="github-btn">Đăng nhập bằng GitHub</a>
-        <a href="/device-portal" class="portal-link">🔍 Vào cổng tra cứu dành cho người dùng</a>
+        <a href="/device-portal" class="portal-link">🔍 Vào cổng tra cứu & cấu hình SePay</a>
     </div>
 </body>
 </html>
 """
 
-# --- GIAO DIỆN TRANG QUẢN TRỊ ---
+# --- GIAO DIỆN TRANG QUẢN TRỊ ADMIN ---
 ADMIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -628,7 +628,7 @@ def user_request_ota():
     return jsonify({"success": True, "message": "Đã kích hoạt chế độ cập nhật OTA."})
 
 
-# --- API DÀNH CHO ESP32 ---
+# --- API DÀNH CHO ESP32 (KIỂM TRA LICENSE) ---
 @app.route("/api/check-license", methods=["GET"])
 def check_license():
     mac_address = request.args.get("mac")
@@ -674,6 +674,7 @@ def check_license():
     })
 
 
+# --- API DÀNH CHO ESP32 (KIỂM TRA UPDATE OTA) ---
 @app.route("/api/check-update", methods=["GET"])
 def check_update():
     mac_address = request.args.get("mac")
@@ -783,4 +784,5 @@ def check_bank_audio():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
