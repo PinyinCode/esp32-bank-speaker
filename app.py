@@ -95,7 +95,6 @@ USER_PORTAL_HTML = """
             
             const mac = macInput.value.trim();
             
-            // Reset trạng thái hiển thị lỗi cũ
             errorMsg.style.display = 'none';
             errorMsg.innerText = '';
 
@@ -105,7 +104,6 @@ USER_PORTAL_HTML = """
                 return;
             }
 
-            // Khóa nút bấm, hiện trạng thái đang xử lý
             submitBtn.disabled = true;
             submitBtn.innerText = 'Đang xử lý...';
 
@@ -131,7 +129,6 @@ USER_PORTAL_HTML = """
                 errorMsg.innerText = "Lỗi kết nối đến máy chủ. Vui lòng thử lại sau.";
                 errorMsg.style.display = 'block';
             } finally {
-                // Mở lại nút bấm
                 submitBtn.disabled = false;
                 submitBtn.innerText = 'Kích Hoạt Thiết Bị';
             }
@@ -163,13 +160,14 @@ def user_register():
         if existing_device:
             device_token = existing_device.get("device_token")
             sepay_secret = existing_device.get("sepay_secret")
-            # Đề phòng trường hợp dữ liệu cũ thiếu sepay_secret
-            if not sepay_secret:
-                sepay_secret = uuid.uuid4().hex
+            
+            # Đảm bảo có tiền tố whsec_ đúng chuẩn
+            if not sepay_secret or not sepay_secret.startswith("whsec_"):
+                sepay_secret = f"whsec_{uuid.uuid4().hex}"
                 devices_collection.update_one({"_id": mac_clean}, {"$set": {"sepay_secret": sepay_secret}})
         else:
             device_token = str(uuid.uuid4())
-            sepay_secret = uuid.uuid4().hex
+            sepay_secret = f"whsec_{uuid.uuid4().hex}" # Tạo khóa bí mật có tiền tố whsec_
             devices_collection.insert_one({
                 "_id": mac_clean,
                 "device_token": device_token,
@@ -202,7 +200,7 @@ def bank_webhook(mac):
     if not device:
         return jsonify({"success": False, "error": "Device MAC not registered"}), 404
         
-    sepay_secret = device.get("sepay_secret", "default_sepay_secret")
+    sepay_secret = device.get("sepay_secret", "whsec_default_secret")
 
     # Xác thực chữ ký HMAC-SHA256
     signature = request.headers.get("X-SePay-Signature", "")
