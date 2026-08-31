@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import os
+import uuid
 import certifi
 from flask import (
     Flask,
@@ -79,6 +80,7 @@ def get_device(mac):
                     "trial": doc.get("trial", False),
                     "ota_pending": doc.get("ota_pending", False),
                     "created_at": doc.get("created_at", ""),
+                    "sepay_secret": doc.get("sepay_secret", ""),
                     "notifications": doc.get("notifications", []),
                 }
     except Exception as e:
@@ -117,7 +119,7 @@ LOGIN_HTML = """
         <h2>Quản Trị ESP32</h2>
         <p>Vui lòng xác thực tài khoản quản trị</p>
         <a href="/login/authorize" class="github-btn">Đăng nhập bằng GitHub</a>
-        <a href="/device-portal" class="portal-link">🔍 Vào cổng tra cứu dành cho người dùng</a>
+        <a href="/device-portal" class="portal-link">🔍 Vào cổng tra cứu & cấu hình SePay</a>
     </div>
 </body>
 </html>
@@ -129,7 +131,7 @@ ADMIN_HTML = """
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Quản lý Bản quyền & OTA ESP32</title>
+    <title>Quản lý Bản quyền & Loa ESP32</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; background: #f4f7f6; color: #333; }
         .container { max-width: 1050px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -229,48 +231,69 @@ ADMIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRA CỨU CHO USER ---
+# --- GIAO DIỆN TRA CỨU & CẤU HÌNH CHO USER (CÓ WEBHOOK & KEY) ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kiểm tra Bản quyền & Cập nhật Firmware ESP32</title>
+    <title>Cổng Cấu Hình SePay & Firmware ESP32</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f2f2f7; color: #1c1c1e; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: white; width: 400px; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); box-sizing: border-box; text-align: center; }
+        .card { background: white; width: 440px; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); box-sizing: border-box; text-align: center; }
         h2 { font-size: 20px; margin-bottom: 8px; color: #007aff; }
         p.subtitle { font-size: 13px; color: #8e8e93; margin-bottom: 20px; }
         .form-group { margin-bottom: 15px; text-align: left; }
         label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 5px; }
-        input { width: 100%; padding: 12px; border: 1px solid #c7c7cc; border-radius: 10px; font-size: 14px; box-sizing: border-box; outline: none; }
+        input { width: 100%; padding: 12px; border: 1px solid #c7c7cc; border-radius: 10px; font-size: 14px; box-sizing: border-box; outline: none; background: #fff; }
         input:focus { border-color: #007aff; }
         .btn { width: 100%; padding: 12px; background: #007aff; color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
         .btn:hover { background: #0056b3; }
         .btn-green { background: #34c759; margin-top: 10px; }
         .btn-green:hover { background: #28a745; }
         .result-box { margin-top: 20px; background: #fafafc; border: 1px solid #e5e5ea; border-radius: 12px; padding: 15px; text-align: left; font-size: 13px; display: none; }
-        .result-row { margin: 6px 0; display: flex; justify-content: space-between; }
+        .result-row { margin: 8px 0; }
         .status-active { color: #34c759; font-weight: bold; }
         .status-expired { color: #ff3b30; font-weight: bold; }
+        .copy-row { display: flex; gap: 5px; margin-top: 4px; }
+        .copy-btn { padding: 6px 12px; background: #e5e5ea; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; }
+        .copy-btn:hover { background: #d1d1d6; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>Cổng Thông Tin Thiết Bị</h2>
-        <p class="subtitle">Kiểm tra hạn sử dụng và yêu cầu cập nhật Firmware</p>
+        <h2>Cổng Thông Tin Loa Ngân Hàng</h2>
+        <p class="subtitle">Lấy Link Webhook, Key SePay và Cập nhật Firmware</p>
         
         <div class="form-group">
-            <label>Nhập Địa chỉ MAC của bạn:</label>
+            <label>Nhập Địa chỉ MAC của thiết bị:</label>
             <input type="text" id="macInput" placeholder="Ví dụ: 24:0A:C4:12:34:56">
         </div>
-        <button class="btn" onclick="checkDevice()">Kiểm tra thiết bị</button>
+        <button class="btn" onclick="checkDevice()">Truy vấn thông tin</button>
 
         <div id="resultCard" class="result-box">
             <div class="result-row"><span>Tên thiết bị:</span> <b id="resName">-</b></div>
             <div class="result-row"><span>Trạng thái:</span> <span id="resStatus">-</span></div>
             <div class="result-row"><span>Hết hạn lúc:</span> <b id="resExpiry">-</b></div>
+            
+            <hr style="border: 0; border-top: 1px solid #e5e5ea; margin: 12px 0;">
+
+            <div class="result-row">
+                <label>SePay Webhook URL:</label>
+                <div class="copy-row">
+                    <input type="text" id="resWebhook" readonly>
+                    <button class="copy-btn" onclick="copyText('resWebhook')">Copy</button>
+                </div>
+            </div>
+
+            <div class="result-row" style="margin-top: 10px;">
+                <label>SePay Secret / Key:</label>
+                <div class="copy-row">
+                    <input type="text" id="resSecret" readonly>
+                    <button class="copy-btn" onclick="copyText('resSecret')">Copy</button>
+                </div>
+            </div>
             
             <button id="updateBtn" class="btn btn-green" style="display:none;" onclick="requestOTA()">Yêu cầu Cập nhật Firmware</button>
         </div>
@@ -305,6 +328,9 @@ USER_PORTAL_HTML = """
                     const expiryDate = new Date(data.expires_at);
                     document.getElementById('resExpiry').innerText = expiryDate.toLocaleString('vi-VN');
                     
+                    document.getElementById('resWebhook').value = data.webhook_url || "";
+                    document.getElementById('resSecret').value = data.sepay_secret || "";
+
                     document.getElementById('resultCard').style.display = "block";
                 } else {
                     alert(data.error || "Không tìm thấy thông tin thiết bị.");
@@ -334,6 +360,14 @@ USER_PORTAL_HTML = """
             } catch (e) {
                 alert("Lỗi kết nối khi gửi yêu cầu OTA.");
             }
+        }
+
+        function copyText(elementId) {
+            const copyText = document.getElementById(elementId);
+            copyText.select();
+            copyText.setSelectionRange(0, 99999);
+            navigator.clipboard.writeText(copyText.value);
+            alert("Đã sao chép: " + copyText.value);
         }
     </script>
 </body>
@@ -437,11 +471,18 @@ def admin_add():
                 hour=23, minute=59, second=59
             )
             device = get_device(mac)
+            
+            # Tự động tạo SePay Secret nếu thiết bị mới chưa có
+            sepay_secret = device.get("sepay_secret") if device else None
+            if not sepay_secret:
+                sepay_secret = f"whsec_{uuid.uuid4().hex}"
+
             if device:
                 device["expires_at"] = expiry_date.isoformat()
                 if username:
                     device["username"] = username
                 device["status"] = "active"
+                device["sepay_secret"] = sepay_secret
             else:
                 device = {
                     "username": username,
@@ -450,6 +491,7 @@ def admin_add():
                     "trial": False,
                     "ota_pending": False,
                     "created_at": datetime.utcnow().isoformat(),
+                    "sepay_secret": sepay_secret,
                     "notifications": [],
                 }
             save_device(mac, device)
@@ -544,11 +586,23 @@ def user_check_device():
 
     status = "active" if now <= expiry_time else "expired"
 
+    # Đảm bảo thiết bị có sepay_secret, nếu chưa có thì tự sinh ra ngay lúc tra cứu
+    sepay_secret = device_info.get("sepay_secret")
+    if not sepay_secret:
+        sepay_secret = f"whsec_{uuid.uuid4().hex}"
+        device_info["sepay_secret"] = sepay_secret
+        save_device(mac_address, device_info)
+
+    host_url = request.host_url.rstrip("/")
+    webhook_url = f"{host_url}/api/bank-webhook/{mac_address}"
+
     return jsonify({
         "mac": mac_address,
         "username": device_info.get("username", ""),
         "status": status,
         "expires_at": device_info["expires_at"],
+        "webhook_url": webhook_url,
+        "sepay_secret": sepay_secret,
     })
 
 
@@ -666,7 +720,6 @@ def bank_webhook(mac):
     mac_clean = mac.strip().upper()
     device = get_device(mac_clean)
     
-    # CHẶN NGAY NẾU MAC KHÔNG CÓ TRONG HỆ THỐNG QUẢN LÝ
     if not device:
         return jsonify({"success": False, "error": "Device MAC not registered in system"}), 404
 
@@ -676,7 +729,6 @@ def bank_webhook(mac):
     if amount and float(amount) > 0:
         amount_int = int(float(amount))
         
-        # Loa đọc ngắn gọn theo yêu cầu
         audio_message = f"Tài khoản của bạn vừa nhận được {amount_int:,} đồng."
 
         if "notifications" not in device or not isinstance(device["notifications"], list):
@@ -709,8 +761,8 @@ def check_bank_audio():
 
     notifications = device.get("notifications", [])
     if len(notifications) > 0:
-        notif = notifications.pop(0) # Lấy giao dịch đầu tiên
-        save_device(mac_clean, device) # Lưu lại sau khi pop thông báo
+        notif = notifications.pop(0) 
+        save_device(mac_clean, device) 
 
         msg = notif["message"]
         encoded_msg = requests.utils.quote(msg)
