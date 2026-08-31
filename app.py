@@ -9,9 +9,7 @@ from pymongo import MongoClient
 
 app = Flask(__name__)
 
-# --- CẤU HÌNH MONGODB & BẢO MẬT ---
 MONGO_URI = os.environ.get("MONGO_URI") 
-WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "default_sepay_secret")
 
 client = None
 db = None
@@ -23,7 +21,6 @@ try:
         db = client["esp32_bank_db"] 
         devices_collection = db["bank_devices"]
         
-        # TẠO TTL INDEX CHO MẢNG NOTIFICATIONS (Tự động xóa sau 24 giờ = 86400 giây)
         try:
             devices_collection.create_index(
                 [("notifications.created_at", 1)],
@@ -59,7 +56,7 @@ USER_PORTAL_HTML = """
         .btn { width: 100%; padding: 12px; background: #007aff; color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
         .btn:hover { background: #0056b3; }
         .result-box { margin-top: 20px; background: #fafafc; border: 1px solid #e5e5ea; border-radius: 12px; padding: 15px; text-align: left; font-size: 13px; display: none; }
-        .code-block { background: #e5e5ea; padding: 8px; border-radius: 6px; word-break: break-all; font-family: monospace; font-size: 12px; margin-top: 5px; color: #d70015; }
+        .code-block { background: #e5e5ea; padding: 6px 8px; border-radius: 6px; word-break: break-all; font-family: monospace; font-size: 12px; margin-top: 4px; color: #d70015; }
     </style>
 </head>
 <body>
@@ -75,9 +72,13 @@ USER_PORTAL_HTML = """
 
         <div id="resultCard" class="result-box">
             <b>✓ Đăng ký thành công!</b>
-            <p style="margin: 8px 0 2px 0; color: #666;">1. Copy đường dẫn Webhook dán vào SePay:</p>
+            <p style="margin: 8px 0 2px 0; color: #666;">1. Đường dẫn Webhook (Dán vào SePay):</p>
             <div class="code-block" id="webhookResult"></div>
-            <p style="margin: 10px 0 2px 0; color: #666;">2. Token bảo mật nạp vào code ESP32:</p>
+            
+            <p style="margin: 8px 0 2px 0; color: #666;">2. SePay Secret Key (Dán vào ô HMAC SePay):</p>
+            <div class="code-block" id="sepaySecretResult" style="color: #34c759;"></div>
+
+            <p style="margin: 8px 0 2px 0; color: #666;">3. Token bảo mật (Nạp vào code ESP32):</p>
             <div class="code-block" id="tokenResult" style="color: #007aff;"></div>
         </div>
     </div>
@@ -97,6 +98,7 @@ USER_PORTAL_HTML = """
 
                 if (response.ok) {
                     document.getElementById('webhookResult').innerText = data.webhook_url;
+                    document.getElementById('sepaySecretResult').innerText = data.sepay_secret;
                     document.getElementById('tokenResult').innerText = data.device_token;
                     document.getElementById('resultCard').style.display = 'block';
                 } else {
@@ -113,7 +115,7 @@ USER_PORTAL_HTML = """
 def home():
     return render_template_string(USER_PORTAL_HTML)
 
-# --- 1. API KHÁCH HÀNG ĐĂNG KÝ MAC ---
+# --- 1. API KHÁCH HÀNG ĐĂNG KÝ MAC (TỰ TẠO TOKEN & SEPAY SECRET RIÊNG) ---
 @app.route("/api/user/register", methods=["POST"])
 def user_register():
     if devices_collection is None:
@@ -129,11 +131,14 @@ def user_register():
     existing_device = devices_collection.find_one({"_id": mac_clean})
     if existing_device:
         device_token = existing_device.get("device_token")
+        sepay_secret = existing_device.get("sepay_secret")
     else:
         device_token = str(uuid.uuid4())
+        sepay_secret = uuid.uuid4().hex # Tạo một secret key ngẫu nhiên riêng cho khách này
         devices_collection.insert_one({
             "_id": mac_clean,
             "device_token": device_token,
+            "sepay_secret": sepay_secret,
             "notifications": []
         })
         
@@ -144,10 +149,11 @@ def user_register():
         "success": True,
         "mac": mac_clean,
         "webhook_url": webhook_url,
+        "sepay_secret": sepay_secret,
         "device_token": device_token
     })
 
-# --- 2. API WEBHOOK NHẬN TỪ SEPAY ---
+# --- 2. API WEBHOOK NHẬN TỪ SEPAY (XÁC THỰC BẰNG SECRET RIÊNG CỦA MAC ĐÓ) ---
 @app.route("/api/bank-webhook/<path:mac>", methods=["POST"])
 def bank_webhook(mac):
     if devices_collection is None:
@@ -159,11 +165,14 @@ def bank_webhook(mac):
     if not device:
         return jsonify({"success": False, "error": "Device MAC not registered"}), 404
         
-    # Xác thực chữ ký HMAC-SHA256 bảo mật từ SePay
+    # Lấy Secret Key riêng của thiết bị này từ MongoDB
+    sepay_secret = device.get("sepay_secret", "")
+
+    # Xác thực chữ ký HMAC-SHA256
     signature = request.headers.get("X-SePay-Signature", "")
     raw_body = request.get_data()
     computed_signature = hmac.new(
-        WEBHOOK_SECRET.encode("utf-8"),
+        sepay_secret.encode("utf-8"),
         raw_body,
         hashlib.sha256
     ).hexdigest()
