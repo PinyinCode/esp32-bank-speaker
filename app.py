@@ -1,52 +1,246 @@
-from datetime import datetime, timezone
-import hashlib
-import hmac
+from datetime import datetime, timedelta
 import os
-import uuid
-from flask import Flask, abort, jsonify, render_template_string, request
+import certifi
+from flask import (
+    Flask,
+    jsonify,
+    redirect,
+    render_template_string,
+    request,
+    session,
+    url_for,
+)
 from pymongo import MongoClient
 import requests
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
 
-MONGO_URI = os.environ.get("MONGO_URI")
-
+# --- CẤU HÌNH MONGODB VỚI CERTIFI ---
+MONGO_URI = os.environ.get("MONGO_URI", "")
 client = None
 db = None
 devices_collection = None
 
 try:
-    if MONGO_URI:
-        client = MongoClient(MONGO_URI)
-        db = client["esp32_bank_db"]
-        devices_collection = db["bank_devices"]
-
-        try:
-            devices_collection.create_index(
-                [("notifications.created_at", 1)], expireAfterSeconds=86400
-            )
-            print("✓ Đã cấu hình tự động xóa thông báo sau 24 giờ (TTL Index)!")
-        except Exception as idx_err:
-            print(f"⚠️ Không thể tạo TTL Index: {idx_err}")
-
-        print("✓ Kết nối MongoDB thành công!")
-    else:
-        print("⚠️ Chưa cấu hình biến môi trường MONGO_URI trên Render!")
+    client = MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=5000,
+        tls=True,
+        tlsCAFile=certifi.where(),
+    )
+    client.admin.command("ping")
+    db = client["esp32_manager"]
+    devices_collection = db["devices"]
+    print(">>> KẾT NỐI MONGODB THÀNH CÔNG VỚI CERTIFI! <<<")
 except Exception as e:
-    print(f"❌ Lỗi kết nối MongoDB: {e}")
+    print(f">>> LỖI KẾT NỐI MONGODB: {e} <<<")
 
-# --- GIAO DIỆN PORTAL CHO KHÁCH HÀNG TỰ ĐĂNG KÝ ---
+# --- CẤU HÌNH GITHUB OAUTH ---
+GITHUB_CLIENT_ID = "Ov23liD2PKCxgNkZfUj5"
+GITHUB_CLIENT_SECRET = "158a74d6beed0ed201ad9a7c4a041738d3185eb6"
+YOUR_GITHUB_USERNAME = "PinyinCode"
+
+# Link file firmware .bin của bạn trên Render Static Site
+DEFAULT_FIRMWARE_URL = "https://esp32-linkdownload.onrender.com/xiaozhi.bin"
+DEFAULT_LATEST_VERSION = "v1.1.0"
+
+
+# --- HÀM THAO TÁC CSDL AN TOÀN ---
+def load_db():
+    devices = {}
+    try:
+        if devices_collection is not None:
+            for doc in devices_collection.find():
+                mac = str(doc.get("_id", ""))
+                if mac:
+                    devices[mac] = {
+                        "username": doc.get("username", ""),
+                        "status": doc.get("status", "active"),
+                        "expires_at": doc.get("expires_at", ""),
+                        "trial": doc.get("trial", False),
+                        "ota_pending": doc.get("ota_pending", False),
+                        "created_at": doc.get("created_at", ""),
+                    }
+    except Exception as e:
+        print(f"Lỗi khi đọc database: {e}")
+    return devices
+
+
+def get_device(mac):
+    try:
+        if devices_collection is not None:
+            doc = devices_collection.find_one({"_id": mac})
+            if doc:
+                return {
+                    "username": doc.get("username", ""),
+                    "status": doc.get("status", "active"),
+                    "expires_at": doc.get("expires_at", ""),
+                    "trial": doc.get("trial", False),
+                    "ota_pending": doc.get("ota_pending", False),
+                    "created_at": doc.get("created_at", ""),
+                    "notifications": doc.get("notifications", []),
+                }
+    except Exception as e:
+        print(f"Lỗi khi tìm thiết bị {mac}: {e}")
+    return None
+
+
+def save_device(mac, data):
+    try:
+        if devices_collection is not None:
+            devices_collection.update_one({"_id": mac}, {"$set": data}, upsert=True)
+    except Exception as e:
+        print(f"Lỗi khi lưu thiết bị {mac}: {e}")
+
+
+# --- GIAO DIỆN TRANG ĐĂNG NHẬP ---
+LOGIN_HTML = """
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Đăng nhập - Quản lý OTA & Loa ESP32</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; color: #333; }
+        .login-card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); text-align: center; width: 350px; }
+        h2 { color: #007BFF; margin-bottom: 10px; }
+        p { color: #666; font-size: 14px; margin-bottom: 25px; }
+        .github-btn { background: #24292e; color: white; padding: 12px 20px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold; width: 100%; box-sizing: border-box; }
+        .github-btn:hover { background: #2c3238; }
+        .portal-link { display: block; margin-top: 15px; font-size: 13px; color: #007BFF; text-decoration: none; }
+        .portal-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2>Quản Trị ESP32</h2>
+        <p>Vui lòng xác thực tài khoản quản trị</p>
+        <a href="/login/authorize" class="github-btn">Đăng nhập bằng GitHub</a>
+        <a href="/device-portal" class="portal-link">🔍 Vào cổng tra cứu dành cho người dùng</a>
+    </div>
+</body>
+</html>
+"""
+
+# --- GIAO DIỆN TRANG QUẢN TRỊ ---
+ADMIN_HTML = """
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Quản lý Bản quyền & OTA ESP32</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f4f7f6; color: #333; }
+        .container { max-width: 1050px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { display: flex; justify-content: space-between; align-items: center; }
+        h2 { color: #007BFF; margin: 0; }
+        .nav-links { display: flex; gap: 10px; align-items: center; }
+        .portal-btn { background: #17a2b8; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 14px; }
+        .portal-btn:hover { background: #138496; }
+        .logout-btn { background: #dc3545; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 14px; }
+        .logout-btn:hover { background: #c82333; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 10px; border: 1px solid #ddd; text-align: left; font-size: 14px; }
+        th { background: #007BFF; color: white; }
+        input, select, button { padding: 6px 8px; margin: 3px 0; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+        button { background: #28a745; color: white; border: none; cursor: pointer; }
+        button:hover { background: #218838; }
+        .ota-btn { background: #17a2b8; padding: 5px 8px; font-size: 12px; border-radius: 4px; color: white; text-decoration: none; display: inline-block; }
+        .ota-btn:hover { background: #138496; }
+        .ota-active { background: #ffc107; color: #212529; font-weight: bold; }
+        .delete-btn { background: #dc3545; padding: 5px 8px; font-size: 12px; border-radius: 4px; color: white; text-decoration: none; display: inline-block; margin-left: 3px; }
+        .delete-btn:hover { background: #c82333; }
+        .form-group { background: #e9ecef; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
+        .form-row { display: flex; gap: 15px; }
+        .form-col { flex: 1; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Quản lý Bản quyền & Loa ESP32</h2>
+            <div class="nav-links">
+                <a href="/device-portal" class="portal-btn" target="_blank">Cổng Tra Cứu (User)</a>
+                <a href="/logout" class="logout-btn">Đăng xuất ({{ user }})</a>
+            </div>
+        </div>
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+        
+        <div class="form-group">
+            <h3>Thêm hoặc Cập nhật thiết bị mới</h3>
+            <form action="/admin/add" method="POST">
+                <div class="form-row">
+                    <div class="form-col">
+                        <label>Địa chỉ MAC:</label><br>
+                        <input type="text" name="mac" placeholder="Ví dụ: 24:0A:C4:12:34:56" required style="width: 100%;">
+                    </div>
+                    <div class="form-col">
+                        <label>Tên quản lý / Username:</label><br>
+                        <input type="text" name="username" placeholder="Ví dụ: Thiết bị phòng khách" style="width: 100%;">
+                    </div>
+                    <div class="form-col">
+                        <label>Ngày hết hạn:</label><br>
+                        <input type="date" name="expiry_date" required style="width: 100%;">
+                    </div>
+                </div>
+                <br>
+                <button type="submit">Lưu / Cập nhật thiết bị</button>
+            </form>
+        </div>
+
+        <h3>Danh sách thiết bị đã lưu</h3>
+        <table>
+            <tr>
+                <th>Địa chỉ MAC</th>
+                <th>Tên quản lý (Username)</th>
+                <th>Trạng thái</th>
+                <th>Ngày hết hạn</th>
+                <th>Thao tác OTA</th>
+                <th>Thao tác khác</th>
+            </tr>
+            {% for mac, info in devices.items() %}
+            <tr>
+                <td><b>{{ mac }}</b></td>
+                <td>
+                    <form action="/admin/update-username/{{ mac }}" method="POST" style="display: flex; gap: 5px; margin: 0;">
+                        <input type="text" name="username" value="{{ info.username }}" placeholder="Nhập tên..." style="flex: 1;">
+                        <button type="submit" style="padding: 4px 8px; font-size: 12px;">Lưu</button>
+                    </form>
+                </td>
+                <td style="color: {{ 'green' if info.status == 'active' else 'red' }};">{{ info.status }}</td>
+                <td>{{ info.expires_at }}</td>
+                <td>
+                    {% if info.get('ota_pending', False) %}
+                        <span class="ota-btn ota-active">Đang chờ...</span>
+                        <a href="/admin/cancel-ota/{{ mac }}" style="font-size:11px; color:red; margin-left: 3px;">Hủy</a>
+                    {% else %}
+                        <a href="/admin/trigger-ota/{{ mac }}" class="ota-btn">Cập nhật OTA</a>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="/admin/delete/{{ mac }}" class="delete-btn" onclick="return confirm('Bạn có chắc chắn muốn xóa thiết bị {{ mac }} không?');">Xóa</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+</body>
+</html>
+"""
+
+# --- GIAO DIỆN TRA CỨU CHO USER ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kích hoạt Loa Ngân Hàng - ESP32</title>
+    <title>Kiểm tra Bản quyền & Cập nhật Firmware ESP32</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f2f2f7; color: #1c1c1e; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: white; width: 480px; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); box-sizing: border-box; text-align: center; }
-        h2 { font-size: 22px; margin-bottom: 8px; color: #007aff; }
+        .card { background: white; width: 400px; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); box-sizing: border-box; text-align: center; }
+        h2 { font-size: 20px; margin-bottom: 8px; color: #007aff; }
         p.subtitle { font-size: 13px; color: #8e8e93; margin-bottom: 20px; }
         .form-group { margin-bottom: 15px; text-align: left; }
         label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 5px; }
@@ -54,78 +248,91 @@ USER_PORTAL_HTML = """
         input:focus { border-color: #007aff; }
         .btn { width: 100%; padding: 12px; background: #007aff; color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
         .btn:hover { background: #0056b3; }
-        .btn:disabled { background: #99c2ff; cursor: not-allowed; }
+        .btn-green { background: #34c759; margin-top: 10px; }
+        .btn-green:hover { background: #28a745; }
         .result-box { margin-top: 20px; background: #fafafc; border: 1px solid #e5e5ea; border-radius: 12px; padding: 15px; text-align: left; font-size: 13px; display: none; }
-        .code-block { background: #e5e5ea; padding: 6px 8px; border-radius: 6px; word-break: break-all; font-family: monospace; font-size: 12px; margin-top: 4px; color: #d70015; }
-        .error-msg { color: #ff3b30; font-size: 12px; margin-top: 8px; display: none; }
+        .result-row { margin: 6px 0; display: flex; justify-content: space-between; }
+        .status-active { color: #34c759; font-weight: bold; }
+        .status-expired { color: #ff3b30; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>Đăng Ký Loa Ngân Hàng</h2>
-        <p class="subtitle">Nhập địa chỉ MAC thiết bị của bạn để lấy thông tin cấu hình</p>
+        <h2>Cổng Thông Tin Thiết Bị</h2>
+        <p class="subtitle">Kiểm tra hạn sử dụng và yêu cầu cập nhật Firmware</p>
         
         <div class="form-group">
-            <label>Địa chỉ MAC của ESP32:</label>
+            <label>Nhập Địa chỉ MAC của bạn:</label>
             <input type="text" id="macInput" placeholder="Ví dụ: 24:0A:C4:12:34:56">
         </div>
-        <button class="btn" id="submitBtn" onclick="registerDevice()">Kích Hoạt Thiết Bị</button>
-        <div class="error-msg" id="errorMsg"></div>
+        <button class="btn" onclick="checkDevice()">Kiểm tra thiết bị</button>
 
         <div id="resultCard" class="result-box">
-            <b>✓ Đăng ký thành công!</b>
-            <p style="margin: 8px 0 2px 0; color: #666;">1. Đường dẫn Webhook (Dán vào SePay):</p>
-            <div class="code-block" id="webhookResult"></div>
+            <div class="result-row"><span>Tên thiết bị:</span> <b id="resName">-</b></div>
+            <div class="result-row"><span>Trạng thái:</span> <span id="resStatus">-</span></div>
+            <div class="result-row"><span>Hết hạn lúc:</span> <b id="resExpiry">-</b></div>
             
-            <p style="margin: 8px 0 2px 0; color: #666;">2. SePay Secret Key (Dán vào ô HMAC SePay):</p>
-            <div class="code-block" id="sepaySecretResult" style="color: #34c759;"></div>
+            <button id="updateBtn" class="btn btn-green" style="display:none;" onclick="requestOTA()">Yêu cầu Cập nhật Firmware</button>
         </div>
     </div>
 
     <script>
-        async function registerDevice() {
-            const macInput = document.getElementById('macInput');
-            const submitBtn = document.getElementById('submitBtn');
-            const errorMsg = document.getElementById('errorMsg');
-            const resultCard = document.getElementById('resultCard');
-            
-            const mac = macInput.value.trim();
-            
-            errorMsg.style.display = 'none';
-            errorMsg.innerText = '';
-
+        async function checkDevice() {
+            const mac = document.getElementById('macInput').value.trim();
             if (!mac) {
-                errorMsg.innerText = 'Vui lòng nhập địa chỉ MAC!';
-                errorMsg.style.display = 'block';
+                alert('Vui lòng nhập địa chỉ MAC!');
                 return;
             }
 
-            submitBtn.disabled = true;
-            submitBtn.innerText = 'Đang xử lý...';
+            try {
+                const response = await fetch(`/api/user/check?mac=${encodeURIComponent(mac)}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('resName').innerText = data.username || "Chưa đặt tên";
+                    
+                    const statusEl = document.getElementById('resStatus');
+                    if (data.status === 'active') {
+                        statusEl.innerText = "Hoạt động (Active)";
+                        statusEl.className = "status-active";
+                        document.getElementById('updateBtn').style.display = "block";
+                    } else {
+                        statusEl.innerText = "Đã hết hạn (Expired)";
+                        statusEl.className = "status-expired";
+                        document.getElementById('updateBtn').style.display = "none";
+                    }
+
+                    const expiryDate = new Date(data.expires_at);
+                    document.getElementById('resExpiry').innerText = expiryDate.toLocaleString('vi-VN');
+                    
+                    document.getElementById('resultCard').style.display = "block";
+                } else {
+                    alert(data.error || "Không tìm thấy thông tin thiết bị.");
+                    document.getElementById('resultCard').style.display = "none";
+                }
+            } catch (e) {
+                alert("Lỗi kết nối đến máy chủ.");
+            }
+        }
+
+        async function requestOTA() {
+            const mac = document.getElementById('macInput').value.trim();
+            if (!mac) return;
 
             try {
-                const response = await fetch('/api/user/register', {
+                const response = await fetch('/api/user/request-ota', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ mac: mac })
                 });
-
                 const data = await response.json();
-
-                if (response.ok && data.success) {
-                    document.getElementById('webhookResult').innerText = data.webhook_url;
-                    document.getElementById('sepaySecretResult').innerText = data.sepay_secret;
-                    resultCard.style.display = 'block';
+                if (response.ok) {
+                    alert("✓ Đã gửi lệnh yêu cầu cập nhật thành công!");
                 } else {
-                    errorMsg.innerText = data.error || "Không thể đăng ký thiết bị.";
-                    errorMsg.style.display = 'block';
+                    alert("Lỗi: " + (data.error || "Không thể kích hoạt cập nhật."));
                 }
             } catch (e) {
-                errorMsg.innerText = "Lỗi kết nối đến máy chủ. Vui lòng thử lại sau.";
-                errorMsg.style.display = 'block';
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.innerText = 'Kích Hoạt Thiết Bị';
+                alert("Lỗi kết nối khi gửi yêu cầu OTA.");
             }
         }
     </script>
@@ -134,221 +341,389 @@ USER_PORTAL_HTML = """
 """
 
 
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
+    return redirect(url_for("login"))
+
+
+@app.route("/login")
+def login():
+    if "user" in session:
+        return redirect(url_for("admin_panel"))
+    return render_template_string(LOGIN_HTML)
+
+
+@app.route("/login/authorize")
+def login_authorize():
+    github_auth_url = (
+        f"https://github.com/login/oauth/authorize?client_id={GITHUB_CLIENT_ID}"
+    )
+    return redirect(github_auth_url)
+
+
+@app.route("/login/callback")
+def callback():
+    code = request.args.get("code")
+    if not code:
+        return "Đăng nhập thất bại từ GitHub!", 400
+
+    token_url = "https://github.com/login/oauth/access_token"
+    headers = {"Accept": "application/json"}
+    data = {
+        "client_id": GITHUB_CLIENT_ID,
+        "client_secret": GITHUB_CLIENT_SECRET,
+        "code": code,
+    }
+    response = requests.post(token_url, json=data, headers=headers)
+    token_json = response.json()
+    access_token = token_json.get("access_token")
+
+    if not access_token:
+        return "Không thể lấy Token xác thực từ GitHub!", 400
+
+    user_url = "https://api.github.com/user"
+    user_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+    }
+    user_response = requests.get(user_url, headers=user_headers)
+    user_data = user_response.json()
+    github_username = user_data.get("login")
+
+    if (
+        github_username
+        and github_username.lower() == YOUR_GITHUB_USERNAME.lower()
+    ):
+        session["user"] = github_username
+        return redirect(url_for("admin_panel"))
+    else:
+        return (
+            f"Truy cập bị từ chối! Tài khoản GitHub ({github_username})"
+            " không có quyền quản trị hệ thống này.",
+            403,
+        )
+
+
+@app.route("/logout", methods=["GET", "POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/admin", methods=["GET"])
+def admin_panel():
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    devices = load_db()
+    return render_template_string(
+        ADMIN_HTML, devices=devices, user=session["user"]
+    )
+
+
+@app.route("/admin/add", methods=["POST"])
+def admin_add():
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    mac = request.form.get("mac")
+    username = request.form.get("username", "").strip()
+    expiry_date_str = request.form.get("expiry_date")
+
+    if mac and expiry_date_str:
+        mac = mac.strip().upper()
+        try:
+            expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
+            device = get_device(mac)
+            if device:
+                device["expires_at"] = expiry_date.isoformat()
+                if username:
+                    device["username"] = username
+                device["status"] = "active"
+            else:
+                device = {
+                    "username": username,
+                    "status": "active",
+                    "expires_at": expiry_date.isoformat(),
+                    "trial": False,
+                    "ota_pending": False,
+                    "created_at": datetime.utcnow().isoformat(),
+                    "notifications": [],
+                }
+            save_device(mac, device)
+        except ValueError:
+            pass
+
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/update-username/<path:mac>", methods=["POST"])
+def update_username(mac):
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    mac = mac.strip().upper()
+    username = request.form.get("username", "").strip()
+
+    device = get_device(mac)
+    if device:
+        device["username"] = username
+        save_device(mac, device)
+
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/trigger-ota/<path:mac>", methods=["GET"])
+def trigger_ota(mac):
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    mac = mac.strip().upper()
+    device = get_device(mac)
+    if device:
+        device["ota_pending"] = True
+        save_device(mac, device)
+
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/cancel-ota/<path:mac>", methods=["GET"])
+def cancel_ota(mac):
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    mac = mac.strip().upper()
+    device = get_device(mac)
+    if device:
+        device["ota_pending"] = False
+        save_device(mac, device)
+
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/delete/<path:mac>", methods=["GET"])
+def admin_delete(mac):
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    mac = mac.strip().upper()
+    try:
+        if devices_collection is not None:
+            devices_collection.delete_one({"_id": mac})
+    except Exception as e:
+        print(f"Lỗi khi xóa thiết bị {mac}: {e}")
+
+    return redirect(url_for("admin_panel"))
+
+
+# --- CỔNG TRA CỨU CÔNG KHAI (USER PORTAL) ---
+@app.route("/device-portal", methods=["GET"])
+def device_portal():
     return render_template_string(USER_PORTAL_HTML)
 
 
-# --- 1. API KHÁCH HÀNG ĐĂNG KÝ MAC ---
-@app.route("/api/user/register", methods=["POST"])
-def user_register():
-    if devices_collection is None:
-        return jsonify({"success": False, "error": "Chưa kết nối cơ sở dữ liệu MongoDB"}), 500
+@app.route("/api/user/check", methods=["GET"])
+def user_check_device():
+    mac_address = request.args.get("mac")
+    if not mac_address:
+        return jsonify({"error": "Thiếu thông tin địa chỉ MAC"}), 400
 
-    data = request.get_json() or {}
-    mac = data.get("mac")
-    if not mac:
-        return jsonify({"success": False, "error": "Thiếu thông tin địa chỉ MAC"}), 400
+    mac_address = mac_address.strip().upper()
+    device_info = get_device(mac_address)
 
-    mac_clean = mac.strip().upper().replace(":", "")
+    if not device_info:
+        return jsonify({"error": "Địa chỉ MAC này chưa được đăng ký trên hệ thống."}), 404
 
+    now = datetime.utcnow()
     try:
-        existing_device = devices_collection.find_one({"_id": mac_clean})
-        if existing_device:
-            sepay_secret = existing_device.get("sepay_secret")
+        expiry_time = datetime.fromisoformat(device_info["expires_at"])
+    except Exception:
+        expiry_time = now
 
-            if not sepay_secret or not sepay_secret.startswith("whsec_"):
-                sepay_secret = f"whsec_{uuid.uuid4().hex}"
-                devices_collection.update_one(
-                    {"_id": mac_clean}, {"$set": {"sepay_secret": sepay_secret}}
-                )
-        else:
-            sepay_secret = f"whsec_{uuid.uuid4().hex}"
-            devices_collection.insert_one(
-                {
-                    "_id": mac_clean,
-                    "sepay_secret": sepay_secret,
-                    "notifications": [],
-                }
-            )
+    status = "active" if now <= expiry_time else "expired"
 
-        host_url = request.host_url.rstrip("/")
-        webhook_url = f"{host_url}/api/bank-webhook/{mac_clean}"
-
-        return jsonify(
-            {
-                "success": True,
-                "mac": mac_clean,
-                "webhook_url": webhook_url,
-                "sepay_secret": sepay_secret,
-            }
-        )
-    except Exception as db_err:
-        return jsonify({"success": False, "error": f"Lỗi cơ sở dữ liệu: {str(db_err)}"}), 500
+    return jsonify({
+        "mac": mac_address,
+        "username": device_info.get("username", ""),
+        "status": status,
+        "expires_at": device_info["expires_at"],
+    })
 
 
-# --- 2. API WEBHOOK NHẬN TỪ SEPAY ---
+@app.route("/api/user/request-ota", methods=["POST"])
+def user_request_ota():
+    data = request.get_json() or {}
+    mac_address = data.get("mac")
+    if not mac_address:
+        return jsonify({"error": "Thiếu thông tin MAC"}), 400
+
+    mac_address = mac_address.strip().upper()
+    device_info = get_device(mac_address)
+
+    if not device_info:
+        return jsonify({"error": "Thiết bị không tồn tại"}), 404
+
+    now = datetime.utcnow()
+    expiry_time = datetime.fromisoformat(device_info["expires_at"])
+    if now > expiry_time:
+        return jsonify({"error": "Bản quyền thiết bị đã hết hạn, không thể cập nhật!"}), 403
+
+    device_info["ota_pending"] = True
+    save_device(mac_address, device_info)
+
+    return jsonify({"success": True, "message": "Đã kích hoạt chế độ cập nhật OTA."})
+
+
+# --- API DÀNH CHO ESP32 (KIỂM TRA LICENSE) ---
+@app.route("/api/check-license", methods=["GET"])
+def check_license():
+    mac_address = request.args.get("mac")
+    if not mac_address:
+        return jsonify({"error": "Missing mac address parameter", "status": "error"}), 400
+
+    mac_address = mac_address.strip().upper()
+    now = datetime.utcnow()
+    device_info = get_device(mac_address)
+
+    if not device_info:
+        return jsonify({
+            "mac": mac_address,
+            "status": "unauthorized",
+            "message": "Device not registered in system whitelist."
+        }, 403)
+
+    expiry_time = datetime.fromisoformat(device_info["expires_at"])
+
+    if now > expiry_time:
+        device_info["status"] = "expired"
+        save_device(mac_address, device_info)
+        return jsonify({
+            "mac": mac_address,
+            "status": "expired",
+            "message": "License expired.",
+            "expires_at": device_info["expires_at"],
+        })
+
+    return jsonify({
+        "mac": mac_address,
+        "status": "active",
+        "message": "License is valid.",
+        "trial": device_info.get("trial", False),
+        "expires_at": device_info["expires_at"],
+    })
+
+
+# --- API DÀNH CHO ESP32 (KIỂM TRA UPDATE OTA) ---
+@app.route("/api/check-update", methods=["GET"])
+def check_update():
+    mac_address = request.args.get("mac")
+    if not mac_address:
+        return jsonify({"update_available": False, "error": "Missing MAC"}), 400
+
+    mac_address = mac_address.strip().upper()
+    device_info = get_device(mac_address)
+
+    if not device_info:
+        return jsonify({"update_available": False, "message": "Device not registered."})
+
+    now = datetime.utcnow()
+    try:
+        expiry_time = datetime.fromisoformat(device_info["expires_at"])
+    except Exception:
+        expiry_time = now
+
+    if now > expiry_time:
+        device_info["status"] = "expired"
+        device_info["ota_pending"] = False
+        save_device(mac_address, device_info)
+        return jsonify({
+            "update_available": False,
+            "message": "License expired. Update denied."
+        })
+
+    if device_info.get("ota_pending", False):
+        device_info["ota_pending"] = False
+        save_device(mac_address, device_info)
+
+        return jsonify({
+            "update_available": True,
+            "latest_version": DEFAULT_LATEST_VERSION,
+            "firmware_url": DEFAULT_FIRMWARE_URL,
+            "changelog": "Cập nhật thành công theo yêu cầu hợp lệ.",
+        })
+
+    return jsonify({"update_available": False})
+
+
+# --- API NHẬN WEBHOOK TỪ SEPAY (CÓ KIỂM TRA WHITELIST MAC) ---
 @app.route("/api/bank-webhook/<path:mac>", methods=["POST"])
 def bank_webhook(mac):
     if devices_collection is None:
         return jsonify({"success": False, "error": "Database error"}), 500
 
-    mac_clean = mac.strip().upper().replace(":", "")
-
-    device = devices_collection.find_one({"_id": mac_clean})
+    mac_clean = mac.strip().upper()
+    device = get_device(mac_clean)
+    
+    # CHẶN NGAY NẾU MAC KHÔNG CÓ TRONG HỆ THỐNG QUẢN LÝ
     if not device:
-        return jsonify({"success": False, "error": "Device MAC not registered"}), 404
-
-    sepay_secret = device.get("sepay_secret", "")
-
-    signature = request.headers.get("X-SePay-Signature", "")
-    timestamp = request.headers.get("X-SePay-Timestamp", "")
-    raw_body = request.get_data(as_text=True)
-
-    message_to_sign = f"{timestamp}.{raw_body}"
-    expected_signature = (
-        "sha256="
-        + hmac.new(
-            sepay_secret.encode("utf-8"),
-            message_to_sign.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-    )
-
-    if not signature or not hmac.compare_digest(expected_signature, signature):
-        print(f"⚠️ Lỗi xác thực chữ ký SePay cho MAC {mac_clean}")
-        return jsonify({"success": False, "error": "Invalid signature"}), 401
+        return jsonify({"success": False, "error": "Device MAC not registered in system"}), 404
 
     data = request.get_json() or {}
     amount = data.get("transferAmount", 0)
-    content = data.get("content", "")
-    gateway = data.get("gateway", "Ngân hàng")
 
     if amount and float(amount) > 0:
         amount_int = int(float(amount))
         
-        # Câu thông báo ngắn gọn mặc định cho loa phát ra
+        # Loa đọc ngắn gọn theo yêu cầu
         audio_message = f"Tài khoản của bạn vừa nhận được {amount_int:,} đồng."
+
+        if "notifications" not in device or not isinstance(device["notifications"], list):
+            device["notifications"] = []
+
+        device["notifications"].append({
+            "amount": amount_int,
+            "message": audio_message,
+            "created_at": datetime.utcnow().isoformat(),
+        })
         
-        # Thông tin chi tiết lưu lại để dùng cho lệnh MCP hoặc xem lịch sử
-        full_detail = f"Nhận {amount_int:,} đồng từ {gateway}. Nội dung: {content}"
-
-        print(f"[BANK ALERT cho MAC {mac_clean}] {audio_message}")
-
-        devices_collection.update_one(
-            {"_id": mac_clean},
-            {
-                "$push": {
-                    "notifications": {
-                        "amount": amount_int,
-                        "message": audio_message,       # Dùng để đọc ngắn gọn trên loa
-                        "detail": full_detail,          # Dùng khi đòi xem chi tiết qua MCP
-                        "gateway": gateway,
-                        "content": content,
-                        "created_at": datetime.now(timezone.utc),
-                    }
-                }
-            },
-        )
-
-        return jsonify({"success": True, "message": f"Queued for {mac_clean}"}), 200
+        save_device(mac_clean, device)
+        return jsonify({"success": True}), 200
 
     return jsonify({"success": False, "error": "Invalid amount"}), 400
 
 
-# --- 3. API CHO ESP32 GỌI ĐẾN ĐỂ LẤY THÔNG BÁO ---
+# --- API CHO ESP32 GỌI ĐẾN ĐỂ LẤY ÂM THANH SỐ TIỀN ---
 @app.route("/api/check-bank-audio", methods=["GET"])
 def check_bank_audio():
-    if devices_collection is None:
-        return jsonify({"has_notification": False, "error": "Database error"}), 500
-
     mac_address = request.args.get("mac")
     if not mac_address:
-        return jsonify({"has_notification": False, "error": "Missing MAC"}), 400
+        return jsonify({"has_notification": False}), 400
 
-    mac_clean = mac_address.strip().upper().replace(":", "")
-
-    device = devices_collection.find_one({"_id": mac_clean})
+    mac_clean = mac_address.strip().upper()
+    device = get_device(mac_clean)
+    
     if not device:
-        return jsonify({"has_notification": False, "error": "Device not registered"}), 404
+        return jsonify({"has_notification": False}), 404
 
     notifications = device.get("notifications", [])
     if len(notifications) > 0:
-        notif = notifications.pop(0)
-
-        devices_collection.update_one(
-            {"_id": mac_clean}, {"$set": {"notifications": notifications}}
-        )
+        notif = notifications.pop(0) # Lấy giao dịch đầu tiên
+        save_device(mac_clean, device) # Lưu lại sau khi pop thông báo
 
         msg = notif["message"]
         encoded_msg = requests.utils.quote(msg)
         audio_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded_msg}&tl=vi&client=tw-ob"
 
-        return jsonify(
-            {
-                "has_notification": True,
-                "mac": mac_clean,
-                "message": msg,
-                "audio_url": audio_url,
-            }
-        )
+        return jsonify({
+            "has_notification": True,
+            "mac": mac_clean,
+            "message": msg,
+            "audio_url": audio_url,
+        })
 
     return jsonify({"has_notification": False})
-
-
-# --- 4. API XEM LỊCH SỬ GIAO DỊCH GẦN NHẤT ---
-@app.route("/api/bank-history", methods=["GET"])
-def bank_history():
-    if devices_collection is None:
-        return jsonify({"transactions": []}), 500
-
-    mac_address = request.args.get("mac")
-    limit = int(request.args.get("limit", 3))
-
-    if not mac_address:
-        return jsonify({"transactions": []}), 400
-
-    mac_clean = mac_address.strip().upper().replace(":", "")
-    device = devices_collection.find_one({"_id": mac_clean})
-    
-    if not device:
-        return jsonify({"transactions": []}), 404
-
-    notifications = device.get("notifications", [])
-    recent_txs = notifications[-limit:] if len(notifications) >= limit else notifications
-    recent_txs.reverse()
-
-    return jsonify({"transactions": recent_txs}), 200
-
-
-# --- 5. API THỐNG KÊ TỔNG TIỀN VÀ SỐ LƯỢNG GIAO DỊCH ---
-@app.route("/api/bank-stats", methods=["GET"])
-def bank_stats():
-    if devices_collection is None:
-        return jsonify({"total_amount": 0, "total_transactions": 0}), 500
-
-    mac_address = request.args.get("mac")
-    if not mac_address:
-        return jsonify({"total_amount": 0, "total_transactions": 0}), 400
-
-    mac_clean = mac_address.strip().upper().replace(":", "")
-    device = devices_collection.find_one({"_id": mac_clean})
-
-    if not device:
-        return jsonify({"total_amount": 0, "total_transactions": 0}), 404
-
-    notifications = device.get("notifications", [])
-    
-    total_amount = 0
-    total_transactions = len(notifications)
-
-    for notif in notifications:
-        total_amount += notif.get("amount", 0)
-
-    return jsonify({
-        "total_amount": total_amount,
-        "total_transactions": total_transactions
-    }), 200
 
 
 if __name__ == "__main__":
