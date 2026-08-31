@@ -55,8 +55,10 @@ USER_PORTAL_HTML = """
         input:focus { border-color: #007aff; }
         .btn { width: 100%; padding: 12px; background: #007aff; color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
         .btn:hover { background: #0056b3; }
+        .btn:disabled { background: #99c2ff; cursor: not-allowed; }
         .result-box { margin-top: 20px; background: #fafafc; border: 1px solid #e5e5ea; border-radius: 12px; padding: 15px; text-align: left; font-size: 13px; display: none; }
         .code-block { background: #e5e5ea; padding: 6px 8px; border-radius: 6px; word-break: break-all; font-family: monospace; font-size: 12px; margin-top: 4px; color: #d70015; }
+        .error-msg { color: #ff3b30; font-size: 12px; margin-top: 8px; display: none; }
     </style>
 </head>
 <body>
@@ -68,7 +70,8 @@ USER_PORTAL_HTML = """
             <label>Địa chỉ MAC của ESP32:</label>
             <input type="text" id="macInput" placeholder="Ví dụ: 24:0A:C4:12:34:56">
         </div>
-        <button class="btn" onclick="registerDevice()">Kích Hoạt Thiết Bị</button>
+        <button class="btn" id="submitBtn" onclick="registerDevice()">Kích Hoạt Thiết Bị</button>
+        <div class="error-msg" id="errorMsg"></div>
 
         <div id="resultCard" class="result-box">
             <b>✓ Đăng ký thành công!</b>
@@ -85,8 +88,26 @@ USER_PORTAL_HTML = """
 
     <script>
         async function registerDevice() {
-            const mac = document.getElementById('macInput').value.trim();
-            if (!mac) { alert('Vui lòng nhập địa chỉ MAC!'); return; }
+            const macInput = document.getElementById('macInput');
+            const submitBtn = document.getElementById('submitBtn');
+            const errorMsg = document.getElementById('errorMsg');
+            const resultCard = document.getElementById('resultCard');
+            
+            const mac = macInput.value.trim();
+            
+            // Reset trạng thái hiển thị lỗi cũ
+            errorMsg.style.display = 'none';
+            errorMsg.innerText = '';
+
+            if (!mac) {
+                errorMsg.innerText = 'Vui lòng nhập địa chỉ MAC!';
+                errorMsg.style.display = 'block';
+                return;
+            }
+
+            // Khóa nút bấm, hiện trạng thái đang xử lý
+            submitBtn.disabled = true;
+            submitBtn.innerText = 'Đang xử lý...';
 
             try {
                 const response = await fetch('/api/user/register', {
@@ -94,19 +115,26 @@ USER_PORTAL_HTML = """
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ mac: mac })
                 });
+
                 const data = await response.json();
 
-                if (response.ok) {
-                    document.getElementById('webhookResultinnerText = data.webhook_url;
-                    // Sửa lại đúng id lấy dữ liệu sepay_secret trả về từ server
+                if (response.ok && data.success) {
                     document.getElementById('webhookResult').innerText = data.webhook_url;
                     document.getElementById('sepaySecretResult').innerText = data.sepay_secret;
                     document.getElementById('tokenResult').innerText = data.device_token;
-                    document.getElementById('resultCard').style.display = 'block';
+                    resultCard.style.display = 'block';
                 } else {
-                    alert(data.error || "Không thể đăng ký thiết bị.");
+                    errorMsg.innerText = data.error || "Không thể đăng ký thiết bị.";
+                    errorMsg.style.display = 'block';
                 }
-            } catch (e) { alert("Lỗi kết nối đến máy chủ."); }
+            } catch (e) {
+                errorMsg.innerText = "Lỗi kết nối đến máy chủ. Vui lòng thử lại sau.";
+                errorMsg.style.display = 'block';
+            } finally {
+                // Mở lại nút bấm
+                submitBtn.disabled = false;
+                submitBtn.innerText = 'Kích Hoạt Thiết Bị';
+            }
         }
     </script>
 </body>
@@ -121,43 +149,46 @@ def home():
 @app.route("/api/user/register", methods=["POST"])
 def user_register():
     if devices_collection is None:
-        return jsonify({"error": "Chưa kết nối cơ sở dữ liệu MongoDB"}), 500
+        return jsonify({"success": False, "error": "Chưa kết nối cơ sở dữ liệu MongoDB"}), 500
 
     data = request.get_json() or {}
     mac = data.get("mac")
     if not mac:
-        return jsonify({"error": "Thiếu thông tin địa chỉ MAC"}), 400
+        return jsonify({"success": False, "error": "Thiếu thông tin địa chỉ MAC"}), 400
         
     mac_clean = mac.strip().upper().replace(":", "")
     
-    existing_device = devices_collection.find_one({"_id": mac_clean})
-    if existing_device:
-        device_token = existing_device.get("device_token")
-        # Nếu thiết bị cũ chưa có sepay_secret thì tự sinh bù vào
-        sepay_secret = existing_device.get("sepay_secret")
-        if not sepay_secret:
+    try:
+        existing_device = devices_collection.find_one({"_id": mac_clean})
+        if existing_device:
+            device_token = existing_device.get("device_token")
+            sepay_secret = existing_device.get("sepay_secret")
+            # Đề phòng trường hợp dữ liệu cũ thiếu sepay_secret
+            if not sepay_secret:
+                sepay_secret = uuid.uuid4().hex
+                devices_collection.update_one({"_id": mac_clean}, {"$set": {"sepay_secret": sepay_secret}})
+        else:
+            device_token = str(uuid.uuid4())
             sepay_secret = uuid.uuid4().hex
-            devices_collection.update_one({"_id": mac_clean}, {"$set": {"sepay_secret": sepay_secret}})
-    else:
-        device_token = str(uuid.uuid4())
-        sepay_secret = uuid.uuid4().hex
-        devices_collection.insert_one({
-            "_id": mac_clean,
-            "device_token": device_token,
-            "sepay_secret": sepay_secret,
-            "notifications": []
-        })
+            devices_collection.insert_one({
+                "_id": mac_clean,
+                "device_token": device_token,
+                "sepay_secret": sepay_secret,
+                "notifications": []
+            })
+            
+        host_url = request.host_url.rstrip('/')
+        webhook_url = f"{host_url}/api/bank-webhook/{mac_clean}"
         
-    host_url = request.host_url.rstrip('/')
-    webhook_url = f"{host_url}/api/bank-webhook/{mac_clean}"
-    
-    return jsonify({
-        "success": True,
-        "mac": mac_clean,
-        "webhook_url": webhook_url,
-        "sepay_secret": sepay_secret,
-        "device_token": device_token
-    })
+        return jsonify({
+            "success": True,
+            "mac": mac_clean,
+            "webhook_url": webhook_url,
+            "sepay_secret": sepay_secret,
+            "device_token": device_token
+        })
+    except Exception as db_err:
+        return jsonify({"success": False, "error": f"Lỗi cơ sở dữ liệu: {str(db_err)}"}), 500
 
 # --- 2. API WEBHOOK NHẬN TỪ SEPAY ---
 @app.route("/api/bank-webhook/<path:mac>", methods=["POST"])
@@ -171,20 +202,19 @@ def bank_webhook(mac):
     if not device:
         return jsonify({"success": False, "error": "Device MAC not registered"}), 404
         
-    sepay_secret = device.get("sepay_secret", "")
+    sepay_secret = device.get("sepay_secret", "default_sepay_secret")
 
+    # Xác thực chữ ký HMAC-SHA256
     signature = request.headers.get("X-SePay-Signature", "")
     raw_body = request.get_data()
+    computed_signature = hmac.new(
+        sepay_secret.encode("utf-8"),
+        raw_body,
+        hashlib.sha256
+    ).hexdigest()
     
-    if sepay_secret:
-        computed_signature = hmac.new(
-            sepay_secret.encode("utf-8"),
-            raw_body,
-            hashlib.sha256
-        ).hexdigest()
-        
-        if signature and not hmac.compare_digest(signature, computed_signature):
-            return jsonify({"success": False, "error": "Invalid signature"}), 401
+    if signature and not hmac.compare_digest(signature, computed_signature):
+        return jsonify({"success": False, "error": "Invalid signature"}), 401
 
     data = request.get_json() or {}
     amount = data.get("transferAmount", 0)
