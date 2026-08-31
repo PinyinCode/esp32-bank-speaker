@@ -102,7 +102,7 @@ LOGIN_HTML = """
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Đăng nhập - Quản lý OTA & Loa ESP32</title>
+    <title>Đăng nhập - Quản lý OTA ESP32</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; color: #333; }
         .login-card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); text-align: center; width: 350px; }
@@ -119,7 +119,7 @@ LOGIN_HTML = """
         <h2>Quản Trị ESP32</h2>
         <p>Vui lòng xác thực tài khoản quản trị</p>
         <a href="/login/authorize" class="github-btn">Đăng nhập bằng GitHub</a>
-        <a href="/device-portal" class="portal-link">🔍 Vào cổng tra cứu & cấu hình SePay</a>
+        <a href="/device-portal" class="portal-link">🔍 Vào cổng tra cứu dành cho người dùng</a>
     </div>
 </body>
 </html>
@@ -131,7 +131,7 @@ ADMIN_HTML = """
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Quản lý Bản quyền & Loa ESP32</title>
+    <title>Quản lý Bản quyền & OTA ESP32</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 40px; background: #f4f7f6; color: #333; }
         .container { max-width: 1050px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -161,7 +161,7 @@ ADMIN_HTML = """
 <body>
     <div class="container">
         <div class="header">
-            <h2>Quản lý Bản quyền & Loa ESP32</h2>
+            <h2>Quản lý Bản quyền & OTA ESP32</h2>
             <div class="nav-links">
                 <a href="/device-portal" class="portal-btn" target="_blank">Cổng Tra Cứu (User)</a>
                 <a href="/logout" class="logout-btn">Đăng xuất ({{ user }})</a>
@@ -231,7 +231,7 @@ ADMIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRA CỨU & CẤU HÌNH CHO USER ---
+# --- GIAO DIỆN TRA CỨU CHO USER (CÓ WEBHOOK & KEY SEPAY) ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -395,7 +395,6 @@ def login_authorize():
     return redirect(github_auth_url)
 
 
-# --- ĐÃ BỔ SUNG LẠI HÀM CALLBACK GITHUB OAUTH ---
 @app.route("/login/callback")
 def callback():
     code = request.args.get("code")
@@ -629,23 +628,30 @@ def user_request_ota():
     return jsonify({"success": True, "message": "Đã kích hoạt chế độ cập nhật OTA."})
 
 
-# --- API DÀNH CHO ESP32 (KIỂM TRA LICENSE) ---
+# --- API DÀNH CHO ESP32 ---
 @app.route("/api/check-license", methods=["GET"])
 def check_license():
     mac_address = request.args.get("mac")
     if not mac_address:
         return jsonify({"error": "Missing mac address parameter", "status": "error"}), 400
 
-    mac_address = mac_address.strip().upper()
+    mac_address = mac_address.upper()
     now = datetime.utcnow()
     device_info = get_device(mac_address)
 
     if not device_info:
-        return jsonify({
-            "mac": mac_address,
-            "status": "unauthorized",
-            "message": "Device not registered in system whitelist."
-        }, 403)
+        expiry_date = now + timedelta(days=30)
+        device_info = {
+            "username": "",
+            "status": "active",
+            "expires_at": expiry_date.isoformat(),
+            "trial": True,
+            "ota_pending": False,
+            "created_at": now.isoformat(),
+            "sepay_secret": f"whsec_{uuid.uuid4().hex}",
+            "notifications": [],
+        }
+        save_device(mac_address, device_info)
 
     expiry_time = datetime.fromisoformat(device_info["expires_at"])
 
@@ -663,19 +669,18 @@ def check_license():
         "mac": mac_address,
         "status": "active",
         "message": "License is valid.",
-        "trial": device_info.get("trial", False),
+        "trial": device_info["trial"],
         "expires_at": device_info["expires_at"],
     })
 
 
-# --- API DÀNH CHO ESP32 (KIỂM TRA UPDATE OTA) ---
 @app.route("/api/check-update", methods=["GET"])
 def check_update():
     mac_address = request.args.get("mac")
     if not mac_address:
         return jsonify({"update_available": False, "error": "Missing MAC"}), 400
 
-    mac_address = mac_address.strip().upper()
+    mac_address = mac_address.upper()
     device_info = get_device(mac_address)
 
     if not device_info:
@@ -778,5 +783,4 @@ def check_bank_audio():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=10000)
