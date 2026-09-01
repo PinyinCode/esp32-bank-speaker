@@ -76,29 +76,16 @@ def save_device(chip_id, data):
 
 def load_db():
     devices_dict = {}
-    now = datetime.utcnow()
     try:
         if devices_collection is not None:
             for doc in devices_collection.find():
                 chip_id = doc.get("_id")
                 if chip_id:
-                    expires_at_str = doc.get("expires_at", "")
-                    status = doc.get("status", "active")
-                    
-                    if expires_at_str:
-                        try:
-                            expiry_time = datetime.fromisoformat(expires_at_str)
-                            if now > expiry_time and status != "expired":
-                                status = "expired"
-                                devices_collection.update_one({"_id": chip_id}, {"$set": {"status": "expired"}})
-                        except Exception:
-                            pass
-
                     devices_dict[chip_id] = {
                         "chip_id": chip_id,
                         "username": doc.get("username", ""),
-                        "status": status,
-                        "expires_at": expires_at_str,
+                        "status": doc.get("status", "active"),
+                        "expires_at": doc.get("expires_at", ""),
                         "trial": doc.get("trial", False),
                         "ota_pending": doc.get("ota_pending", False),
                         "created_at": doc.get("created_at", ""),
@@ -110,7 +97,7 @@ def load_db():
     return devices_dict
 
 
-# --- GIAO DIỆN TRANG ĐĂNG NHẬP ---
+# --- GIAO DIỆN TRANG ĐĂNG NHẬP (CHUẨN APPLE/VERCEL) ---
 LOGIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -193,7 +180,7 @@ LOGIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRANG QUẢN TRỊ ---
+# --- GIAO DIỆN TRANG QUẢN TRỊ (DASHBOARD CHUYÊN NGHIỆP) ---
 ADMIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -543,7 +530,7 @@ USER_PORTAL_HTML = """
 """
 
 
-# --- ROUTE XÁC THỰC & ĐĂNG NHẬP ADMIN (GITHUB OAUTH) ---
+# --- ROUTE XÁC THỰC & ĐĂNG NHẬP ADMIN ---
 @app.route("/")
 def home():
     return redirect(url_for("login"))
@@ -582,11 +569,10 @@ def callback():
         headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
     ).json()
 
-    # Kiểm tra khớp tài khoản GitHub đã định nghĩa
     if user_data.get("login", "").lower() == YOUR_GITHUB_USERNAME.lower():
         session["user"] = user_data.get("login")
         return redirect(url_for("admin_panel"))
-    return "Truy cập bị từ chối! Tài khoản GitHub không được phép quản trị.", 403
+    return "Truy cập bị từ chối!", 403
 
 
 @app.route("/logout", methods=["GET", "POST"])
@@ -618,20 +604,17 @@ def admin_add():
             expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
             device = get_device(chip_id)
             sepay_secret = device.get("sepay_secret") if device and device.get("sepay_secret") else f"whsec_{uuid.uuid4().hex}"
-            
-            now = datetime.utcnow()
-            status = "active" if now <= expiry_date else "expired"
 
             if device:
                 device["expires_at"] = expiry_date.isoformat()
                 if username: 
                     device["username"] = username
-                device["status"] = status
+                device["status"] = "active"
                 device["sepay_secret"] = sepay_secret
             else:
                 device = {
                     "username": username,
-                    "status": status,
+                    "status": "active",
                     "expires_at": expiry_date.isoformat(),
                     "trial": False,
                     "ota_pending": False,
@@ -670,11 +653,7 @@ def update_expiry(chip_id):
     if device and expiry_date_str:
         try:
             expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-            now = datetime.utcnow()
-            status = "active" if now <= expiry_date else "expired"
-            
             device["expires_at"] = expiry_date.isoformat()
-            device["status"] = status
             save_device(chip_id, device)
         except ValueError:
             pass
