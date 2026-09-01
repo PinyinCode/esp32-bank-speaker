@@ -285,7 +285,7 @@ ADMIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRA CỨU CHO USER (CÓ OTP BẮT BUỘC) ---
+# --- GIAO DIỆN TRA CỨU CHO USER (CÓ OTP BẮT BUỘC + XỬ LÝ RENDER SLEEP) ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -304,6 +304,7 @@ USER_PORTAL_HTML = """
         input:focus { border-color: #007aff; }
         .btn { width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
         .btn:hover { background: #0056b3; }
+        .btn:disabled { background: #b0c4de; cursor: not-allowed; }
         .btn-green { background: #34c759; margin-top: 15px; }
         .btn-green:hover { background: #28a745; }
         .btn-gray { background: #8e8e93; margin-top: 8px; }
@@ -376,13 +377,21 @@ USER_PORTAL_HTML = """
     <script>
         document.addEventListener("DOMContentLoaded", function() {
             document.getElementById('sendOtpBtn').addEventListener('click', async function() {
-                const mac = document.getElementById('macInput').value.trim();
+                let mac = document.getElementById('macInput').value.trim();
                 const email = document.getElementById('emailInput').value.trim();
                 
                 if (!mac || !email) {
                     alert('Vui lòng nhập đầy đủ Địa chỉ MAC và Email!');
                     return;
                 }
+
+                // Chuẩn hóa MAC: Viết hoa và thay thế dấu - thành :
+                mac = mac.toUpperCase().replace(/-/g, ':');
+                document.getElementById('macInput').value = mac;
+
+                const btn = this;
+                btn.disabled = true;
+                btn.innerText = "Đang kết nối (Render đang thức dậy, chờ chút)...";
 
                 try {
                     const response = await fetch('/api/user/send-otp', {
@@ -400,18 +409,27 @@ USER_PORTAL_HTML = """
                         alert("Lỗi: " + (data.error || "Không thể gửi OTP."));
                     }
                 } catch (e) {
-                    alert("Lỗi kết nối đến máy chủ: " + e.message);
+                    alert("Lỗi kết nối đến máy chủ (Load failed): Server có thể đang khởi động lại, vui lòng thử bấm lại sau vài giây!");
+                } finally {
+                    btn.disabled = false;
+                    btn.innerText = "Gửi mã xác nhận (OTP)";
                 }
             });
 
             document.getElementById('verifyOtpBtn').addEventListener('click', async function() {
-                const mac = document.getElementById('macInput').value.trim();
+                let mac = document.getElementById('macInput').value.trim();
                 const otp = document.getElementById('otpInput').value.trim();
                 
                 if (!otp || otp.length !== 6) {
                     alert('Vui lòng nhập chính xác mã OTP gồm 6 chữ số!');
                     return;
                 }
+
+                mac = mac.toUpperCase().replace(/-/g, ':');
+
+                const btn = this;
+                btn.disabled = true;
+                btn.innerText = "Đang xác thực...";
 
                 try {
                     const response = await fetch('/api/user/verify-otp', {
@@ -448,6 +466,9 @@ USER_PORTAL_HTML = """
                     }
                 } catch (e) {
                     alert("Lỗi kết nối đến máy chủ.");
+                } finally {
+                    btn.disabled = false;
+                    btn.innerText = "Xác nhận OTP & Tra cứu";
                 }
             });
 
@@ -457,9 +478,11 @@ USER_PORTAL_HTML = """
             });
 
             document.getElementById('updateBtn').addEventListener('click', async function() {
-                const mac = document.getElementById('macInput').value.trim();
+                let mac = document.getElementById('macInput').value.trim();
                 const email = document.getElementById('emailInput').value.trim();
                 if (!mac || !email) return;
+
+                mac = mac.toUpperCase().replace(/-/g, ':');
 
                 try {
                     const response = await fetch('/api/user/request-ota', {
@@ -482,7 +505,7 @@ USER_PORTAL_HTML = """
         function copyText(elementId) {
             const copyText = document.getElementById(elementId);
             copyText.select();
-            copyText.setSelectionRange(0, 99999);
+            copyText.setSelectionRange(0, 9999);
             navigator.clipboard.writeText(copyText.value);
             alert("Đã sao chép thành công!");
         }
@@ -584,7 +607,7 @@ def admin_add():
     expiry_date_str = request.form.get("expiry_date")
 
     if mac and expiry_date_str:
-        mac = mac.strip().upper()
+        mac = mac.strip().upper().replace("-", ":")
         try:
             expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(
                 hour=23, minute=59, second=59
@@ -629,7 +652,7 @@ def update_username(mac):
     if "user" not in session:
         return redirect(url_for("login"))
 
-    mac = mac.strip().upper()
+    mac = mac.strip().upper().replace("-", ":")
     username = request.form.get("username", "").strip()
 
     device = get_device(mac)
@@ -645,7 +668,7 @@ def update_email(mac):
     if "user" not in session:
         return redirect(url_for("login"))
 
-    mac = mac.strip().upper()
+    mac = mac.strip().upper().replace("-", ":")
     email = request.form.get("email", "").strip().lower()
 
     device = get_device(mac)
@@ -661,7 +684,7 @@ def trigger_ota(mac):
     if "user" not in session:
         return redirect(url_for("login"))
 
-    mac = mac.strip().upper()
+    mac = mac.strip().upper().replace("-", ":")
     device = get_device(mac)
     if device:
         device["ota_pending"] = True
@@ -675,7 +698,7 @@ def cancel_ota(mac):
     if "user" not in session:
         return redirect(url_for("login"))
 
-    mac = mac.strip().upper()
+    mac = mac.strip().upper().replace("-", ":")
     device = get_device(mac)
     if device:
         device["ota_pending"] = False
@@ -689,7 +712,7 @@ def admin_delete(mac):
     if "user" not in session:
         return redirect(url_for("login"))
 
-    mac = mac.strip().upper()
+    mac = mac.strip().upper().replace("-", ":")
     try:
         if devices_collection is not None:
             devices_collection.delete_one({"_id": mac})
@@ -714,7 +737,7 @@ def user_send_otp():
     if not mac_address or not client_email:
         return jsonify({"error": "Vui lòng nhập đầy đủ MAC và Email"}), 400
 
-    mac_address = mac_address.strip().upper()
+    mac_address = mac_address.strip().upper().replace("-", ":")
     device_info = get_device(mac_address)
 
     if not device_info:
@@ -752,7 +775,7 @@ def user_verify_otp():
     if not mac_address or not client_otp:
         return jsonify({"error": "Thiếu thông tin MAC hoặc mã OTP"}), 400
 
-    mac_address = mac_address.strip().upper()
+    mac_address = mac_address.strip().upper().replace("-", ":")
     device_info = get_device(mac_address)
 
     if not device_info:
@@ -810,7 +833,7 @@ def user_request_ota():
     if not mac_address or not client_email:
         return jsonify({"error": "Thiếu thông tin MAC hoặc Email"}), 400
 
-    mac_address = mac_address.strip().upper()
+    mac_address = mac_address.strip().upper().replace("-", ":")
     device_info = get_device(mac_address)
 
     if not device_info:
@@ -838,7 +861,7 @@ def check_license():
     if not mac_address:
         return jsonify({"error": "Missing mac address parameter", "status": "error"}), 400
 
-    mac_address = mac_address.upper()
+    mac_address = mac_address.upper().replace("-", ":")
     now = datetime.utcnow()
     device_info = get_device(mac_address)
 
@@ -888,7 +911,7 @@ def check_update():
     if not mac_address:
         return jsonify({"update_available": False, "error": "Missing MAC"}), 400
 
-    mac_address = mac_address.upper()
+    mac_address = mac_address.upper().replace("-", ":")
     device_info = get_device(mac_address)
 
     if not device_info:
@@ -927,7 +950,7 @@ def bank_webhook(mac):
     if devices_collection is None:
         return jsonify({"success": False, "error": "Database error"}), 500
 
-    mac_clean = mac.strip().upper()
+    mac_clean = mac.strip().upper().replace("-", ":")
     device = get_device(mac_clean)
 
     if not device:
@@ -963,7 +986,7 @@ def check_bank_audio():
     if not mac_address:
         return jsonify({"has_notification": False}), 400
 
-    mac_clean = mac_address.strip().upper()
+    mac_clean = mac_address.strip().upper().replace("-", ":")
     device = get_device(mac_clean)
 
     if not device:
