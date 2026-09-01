@@ -285,7 +285,7 @@ ADMIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRA CỨU CHO USER (CÓ OTP BẮT BUỘC + XỬ LÝ RENDER SLEEP) ---
+# --- GIAO DIỆN TRA CỨU CHO USER (HỖ TRỢ ĐĂNG KÝ EMAIL MỚI NẾU CHƯA CÓ) ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -330,8 +330,8 @@ USER_PORTAL_HTML = """
                 <input type="text" id="macInput" placeholder="Ví dụ: 24:0A:C4:12:34:56">
             </div>
             <div class="form-group">
-                <label>Nhập Email đã đăng ký:</label>
-                <input type="email" id="emailInput" placeholder="Nhập email của bạn...">
+                <label>Nhập Email của bạn:</label>
+                <input type="email" id="emailInput" placeholder="Nhập email để nhận OTP hoặc đăng ký...">
             </div>
             <button class="btn" id="sendOtpBtn" type="button">Gửi mã xác nhận (OTP)</button>
         </div>
@@ -385,13 +385,12 @@ USER_PORTAL_HTML = """
                     return;
                 }
 
-                // Chuẩn hóa MAC: Viết hoa và thay thế dấu - thành :
                 mac = mac.toUpperCase().replace(/-/g, ':');
                 document.getElementById('macInput').value = mac;
 
                 const btn = this;
                 btn.disabled = true;
-                btn.innerText = "Đang kết nối (Render đang thức dậy, chờ chút)...";
+                btn.innerText = "Đang xử lý (Server đang khởi động, chờ chút)...";
 
                 try {
                     const response = await fetch('/api/user/send-otp', {
@@ -402,14 +401,14 @@ USER_PORTAL_HTML = """
                     const data = await response.json();
 
                     if (response.ok) {
-                        alert("✓ Mã OTP đã được gửi đến email của bạn!");
+                        alert("✓ " + (data.message || "Mã OTP đã được gửi đến email của bạn!"));
                         document.getElementById('step1').style.display = 'none';
                         document.getElementById('step2').style.display = 'block';
                     } else {
                         alert("Lỗi: " + (data.error || "Không thể gửi OTP."));
                     }
                 } catch (e) {
-                    alert("Lỗi kết nối đến máy chủ (Load failed): Server có thể đang khởi động lại, vui lòng thử bấm lại sau vài giây!");
+                    alert("Lỗi kết nối máy chủ: Server có thể đang khởi động lại, vui lòng thử lại sau giây lát!");
                 } finally {
                     btn.disabled = false;
                     btn.innerText = "Gửi mã xác nhận (OTP)";
@@ -741,17 +740,20 @@ def user_send_otp():
     device_info = get_device(mac_address)
 
     if not device_info:
-        return jsonify({"error": "Địa chỉ MAC này chưa tồn tại trên hệ thống."}), 404
+        return jsonify({"error": "Địa chỉ MAC này chưa tồn tại trên hệ thống. Vui lòng liên hệ quản trị viên."}), 404
 
     stored_email = device_info.get("email", "").strip().lower()
     
+    # KỊCH BẢN: Nếu thiết bị đã có MAC nhưng chưa có email -> Tự động cập nhật email mới do người dùng nhập
     if not stored_email:
         device_info["email"] = client_email
         save_device(mac_address, device_info)
         stored_email = client_email
-
-    if stored_email != client_email:
-        return jsonify({"error": "Email không khớp với dữ liệu đăng ký của thiết bị này!"}), 403
+        success_msg = "Đã đăng ký email thành công và gửi mã OTP xác nhận!"
+    else:
+        if stored_email != client_email:
+            return jsonify({"error": "Email không khớp với dữ liệu đăng ký của thiết bị này!"}), 403
+        success_msg = "Đã gửi mã OTP đến email của bạn."
 
     otp_code = f"{random.randint(100000, 999999)}"
     expiry_time = datetime.utcnow() + timedelta(minutes=5)
@@ -761,7 +763,7 @@ def user_send_otp():
     save_device(mac_address, device_info)
 
     if send_otp_email(client_email, otp_code):
-        return jsonify({"success": True, "message": "Đã gửi mã OTP đến email của bạn."})
+        return jsonify({"success": True, "message": success_msg})
     else:
         return jsonify({"error": "Không thể gửi email. Vui lòng kiểm tra lại cấu hình SMTP."}), 500
 
