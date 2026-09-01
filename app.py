@@ -390,25 +390,38 @@ USER_PORTAL_HTML = """
 
                 const btn = this;
                 btn.disabled = true;
-                btn.innerText = "Đang gửi mã OTP...";
+                btn.innerText = "Đang kết nối...";
 
                 try {
                     const response = await fetch('/api/user/send-otp', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
                         body: JSON.stringify({ mac: mac, email: email })
                     });
-                    const data = await response.json();
+
+                    const responseText = await response.text();
+                    let data;
+                    try {
+                        data = JSON.parse(responseText);
+                    } catch (parseErr) {
+                        console.error("Server trả về không phải JSON:", responseText);
+                        alert("Lỗi từ Server: " + responseText.substring(0, 100));
+                        return;
+                    }
 
                     if (response.ok) {
                         alert("✓ " + (data.message || "Mã OTP đã được gửi đến email của bạn!"));
                         document.getElementById('step1').style.display = 'none';
                         document.getElementById('step2').style.display = 'block';
                     } else {
-                        alert("Lỗi: " + (data.error || "Không thể gửi OTP."));
+                        alert("Lỗi (" + response.status + "): " + (data.error || "Không thể xử lý yêu cầu."));
                     }
                 } catch (e) {
-                    alert("Lỗi kết nối đến máy chủ.");
+                    console.error("Lỗi Fetch chi tiết:", e);
+                    alert("Lỗi kết nối chi tiết: " + e.message);
                 } finally {
                     btn.disabled = false;
                     btn.innerText = "Gửi mã xác nhận (OTP)";
@@ -425,7 +438,6 @@ USER_PORTAL_HTML = """
                 }
 
                 mac = mac.toUpperCase().replace(/-/g, ':');
-
                 const btn = this;
                 btn.disabled = true;
                 btn.innerText = "Đang xác thực...";
@@ -464,7 +476,7 @@ USER_PORTAL_HTML = """
                         alert("Lỗi: " + (data.error || "Xác thực OTP thất bại."));
                     }
                 } catch (e) {
-                    alert("Lỗi kết nối đến máy chủ.");
+                    alert("Lỗi kết nối đến máy chủ: " + e.message);
                 } finally {
                     btn.disabled = false;
                     btn.innerText = "Xác nhận OTP & Tra cứu";
@@ -744,18 +756,15 @@ def user_send_otp():
 
     stored_email = device_info.get("email", "").strip().lower()
     
-    # Nếu thiết bị chưa có email thì lưu mới
     if not stored_email:
         device_info["email"] = client_email
         save_device(mac_address, device_info)
         success_msg = "Đã đăng ký email thành công và gửi mã OTP xác nhận!"
     else:
-        # Nếu đã có email nhưng nhập sai, chặn ngay lập tức, KHÔNG tạo OTP và KHÔNG lưu đè gì cả
         if stored_email != client_email:
             return jsonify({"error": "Email không khớp với dữ liệu đăng ký của thiết bị này!"}), 403
         success_msg = "Đã gửi mã OTP đến email của bạn."
 
-    # Chỉ tạo OTP khi email đã hoàn toàn hợp lệ
     otp_code = f"{random.randint(100000, 999999)}"
     expiry_time = datetime.utcnow() + timedelta(minutes=5)
 
