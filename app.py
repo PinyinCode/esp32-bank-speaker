@@ -666,7 +666,7 @@ def user_request_ota():
     return jsonify({"success": True, "message": "Đã kích hoạt chế độ cập nhật OTA."})
 
 
-# --- API DÀNH CHO ESP32 ---
+# --- API DÀNH CHO ESP32 (KHÔNG BẮT BUỘC CHIP_ID) ---
 @app.route("/api/check-license", methods=["GET"])
 def check_license():
     mac_address = request.args.get("mac")
