@@ -332,7 +332,7 @@ USER_PORTAL_HTML = """
                 <label>Nhập Email đã đăng ký:</label>
                 <input type="email" id="emailInput" placeholder="Nhập email của bạn...">
             </div>
-            <button class="btn" onclick="sendOtp()">Gửi mã xác nhận (OTP)</button>
+            <button class="btn" id="sendOtpBtn" type="button">Gửi mã xác nhận (OTP)</button>
         </div>
 
         <!-- BƯỚC 2: NHẬP MÃ OTP 6 SỐ -->
@@ -341,8 +341,8 @@ USER_PORTAL_HTML = """
                 <label>Nhập mã OTP 6 số đã gửi vào email:</label>
                 <input type="text" id="otpInput" placeholder="Ví dụ: 123456" maxlength="6">
             </div>
-            <button class="btn btn-green" onclick="verifyOtp()">Xác nhận OTP & Tra cứu</button>
-            <button class="btn btn-gray" onclick="backToStep1()">Quay lại / Đổi email</button>
+            <button class="btn btn-green" id="verifyOtpBtn" type="button">Xác nhận OTP & Tra cứu</button>
+            <button class="btn btn-gray" id="backBtn" type="button">Quay lại / Đổi email</button>
         </div>
 
         <!-- KẾT QUẢ HIỂN THỊ SAU KHI XÁC THỰC -->
@@ -357,7 +357,7 @@ USER_PORTAL_HTML = """
                 <label>SePay Webhook URL:</label>
                 <div class="copy-row">
                     <input type="text" id="resWebhook" readonly>
-                    <button class="copy-btn" onclick="copyText('resWebhook')">Copy</button>
+                    <button class="copy-btn" type="button" onclick="copyText('resWebhook')">Copy</button>
                 </div>
             </div>
 
@@ -365,118 +365,119 @@ USER_PORTAL_HTML = """
                 <label>SePay Secret / Key:</label>
                 <div class="copy-row">
                     <input type="text" id="resSecret" readonly>
-                    <button class="copy-btn" onclick="copyText('resSecret')">Copy</button>
+                    <button class="copy-btn" type="button" onclick="copyText('resSecret')">Copy</button>
                 </div>
             </div>
             
-            <button id="updateBtn" class="btn btn-green" style="display:none;" onclick="requestOTA()">Yêu cầu Cập nhật Firmware</button>
+            <button id="updateBtn" class="btn btn-green" style="display:none;" type="button">Yêu cầu Cập nhật Firmware</button>
         </div>
     </div>
 
     <script>
-        async function sendOtp() {
-            const mac = document.getElementById('macInput').value.trim();
-            const email = document.getElementById('emailInput').value.trim();
-            
-            if (!mac || !email) {
-                alert('Vui lòng nhập đầy đủ Địa chỉ MAC và Email!');
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/user/send-otp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mac: mac, email: email })
-                });
-                const data = await response.json();
-
-                if (response.ok) {
-                    alert("✓ Mã OTP đã được gửi đến email của bạn!");
-                    document.getElementById('step1').style.display = 'none';
-                    document.getElementById('step2').style.display = 'block';
-                } else {
-                    alert("Lỗi: " + (data.error || "Không thể gửi OTP."));
+        document.addEventListener("DOMContentLoaded", function() {
+            document.getElementById('sendOtpBtn').addEventListener('click', async function() {
+                const mac = document.getElementById('macInput').value.trim();
+                const email = document.getElementById('emailInput').value.trim();
+                
+                if (!mac || !email) {
+                    alert('Vui lòng nhập đầy đủ Địa chỉ MAC và Email!');
+                    return;
                 }
-            } catch (e) {
-                alert("Lỗi kết nối đến máy chủ.");
-            }
-        }
 
-        async function verifyOtp() {
-            const mac = document.getElementById('macInput').value.trim();
-            const otp = document.getElementById('otpInput').value.trim();
-            
-            if (!otp || otp.length !== 6) {
-                alert('Vui lòng nhập chính xác mã OTP gồm 6 chữ số!');
-                return;
-            }
+                try {
+                    const response = await fetch('/api/user/send-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mac: mac, email: email })
+                    });
+                    const data = await response.json();
 
-            try {
-                const response = await fetch('/api/user/verify-otp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mac: mac, otp: otp })
-                });
-                const data = await response.json();
-
-                if (response.ok) {
-                    document.getElementById('step2').style.display = 'none';
-                    
-                    document.getElementById('resName').innerText = data.username || "Chưa đặt tên";
-                    
-                    const statusEl = document.getElementById('resStatus');
-                    if (data.status === 'active') {
-                        statusEl.innerText = "Hoạt động (Active)";
-                        statusEl.className = "status-active";
-                        document.getElementById('updateBtn').style.display = "block";
+                    if (response.ok) {
+                        alert("✓ Mã OTP đã được gửi đến email của bạn!");
+                        document.getElementById('step1').style.display = 'none';
+                        document.getElementById('step2').style.display = 'block';
                     } else {
-                        statusEl.innerText = "Đã hết hạn (Expired)";
-                        statusEl.className = "status-expired";
-                        document.getElementById('updateBtn').style.display = "none";
+                        alert("Lỗi: " + (data.error || "Không thể gửi OTP."));
                     }
-
-                    const expiryDate = new Date(data.expires_at);
-                    document.getElementById('resExpiry').innerText = expiryDate.toLocaleString('vi-VN');
-                    
-                    document.getElementById('resWebhook').value = data.webhook_url || "";
-                    document.getElementById('resSecret').value = data.sepay_secret || "";
-
-                    document.getElementById('resultCard').style.display = "block";
-                } else {
-                    alert("Lỗi: " + (data.error || "Xác thực OTP thất bại."));
+                } catch (e) {
+                    alert("Lỗi kết nối đến máy chủ: " + e.message);
                 }
-            } catch (e) {
-                alert("Lỗi kết nối đến máy chủ.");
-            }
-        }
+            });
 
-        function backToStep1() {
-            document.getElementById('step2').style.display = 'none';
-            document.getElementById('step1').style.display = 'block';
-        }
-
-        async function requestOTA() {
-            const mac = document.getElementById('macInput').value.trim();
-            const email = document.getElementById('emailInput').value.trim();
-            if (!mac || !email) return;
-
-            try {
-                const response = await fetch('/api/user/request-ota', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mac: mac, email: email })
-                });
-                const data = await response.json();
-                if (response.ok) {
-                    alert("✓ Đã gửi lệnh yêu cầu cập nhật thành công!");
-                } else {
-                    alert("Lỗi: " + (data.error || "Không thể kích hoạt cập nhật."));
+            document.getElementById('verifyOtpBtn').addEventListener('click', async function() {
+                const mac = document.getElementById('macInput').value.trim();
+                const otp = document.getElementById('otpInput').value.trim();
+                
+                if (!otp || otp.length !== 6) {
+                    alert('Vui lòng nhập chính xác mã OTP gồm 6 chữ số!');
+                    return;
                 }
-            } catch (e) {
-                alert("Lỗi kết nối khi gửi yêu cầu OTA.");
-            }
-        }
+
+                try {
+                    const response = await fetch('/api/user/verify-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mac: mac, otp: otp })
+                    });
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        document.getElementById('step2').style.display = 'none';
+                        document.getElementById('resName').innerText = data.username || "Chưa đặt tên";
+                        
+                        const statusEl = document.getElementById('resStatus');
+                        if (data.status === 'active') {
+                            statusEl.innerText = "Hoạt động (Active)";
+                            statusEl.className = "status-active";
+                            document.getElementById('updateBtn').style.display = "block";
+                        } else {
+                            statusEl.innerText = "Đã hết hạn (Expired)";
+                            statusEl.className = "status-expired";
+                            document.getElementById('updateBtn').style.display = "none";
+                        }
+
+                        const expiryDate = new Date(data.expires_at);
+                        document.getElementById('resExpiry').innerText = expiryDate.toLocaleString('vi-VN');
+                        
+                        document.getElementById('resWebhook').value = data.webhook_url || "";
+                        document.getElementById('resSecret').value = data.sepay_secret || "";
+
+                        document.getElementById('resultCard').style.display = "block";
+                    } else {
+                        alert("Lỗi: " + (data.error || "Xác thực OTP thất bại."));
+                    }
+                } catch (e) {
+                    alert("Lỗi kết nối đến máy chủ.");
+                }
+            });
+
+            document.getElementById('backBtn').addEventListener('click', function() {
+                document.getElementById('step2').style.display = 'none';
+                document.getElementById('step1').style.display = 'block';
+            });
+
+            document.getElementById('updateBtn').addEventListener('click', async function() {
+                const mac = document.getElementById('macInput').value.trim();
+                const email = document.getElementById('emailInput').value.trim();
+                if (!mac || !email) return;
+
+                try {
+                    const response = await fetch('/api/user/request-ota', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mac: mac, email: email })
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                        alert("✓ Đã gửi lệnh yêu cầu cập nhật thành công!");
+                    } else {
+                        alert("Lỗi: " + (data.error || "Không thể kích hoạt cập nhật."));
+                    }
+                } catch (e) {
+                    alert("Lỗi kết nối khi gửi yêu cầu OTA.");
+                }
+            });
+        });
 
         function copyText(elementId) {
             const copyText = document.getElementById(elementId);
@@ -721,17 +722,14 @@ def user_send_otp():
 
     stored_email = device_info.get("email", "").strip().lower()
     
-    # Nếu thiết bị chưa có email trên DB -> Gán luôn email này
     if not stored_email:
         device_info["email"] = client_email
         save_device(mac_address, device_info)
         stored_email = client_email
 
-    # Bắt buộc email nhập vào phải khớp với email đã lưu trong database
     if stored_email != client_email:
         return jsonify({"error": "Email không khớp với dữ liệu đăng ký của thiết bị này!"}), 403
 
-    # Tạo mã OTP 6 số ngẫu nhiên
     otp_code = f"{random.randint(100000, 999999)}"
     expiry_time = datetime.utcnow() + timedelta(minutes=5)
 
@@ -772,7 +770,6 @@ def user_verify_otp():
     if str(client_otp) != str(stored_otp):
         return jsonify({"error": "Mã OTP không chính xác!"}), 400
 
-    # Xóa OTP sau khi dùng thành công để bảo mật
     device_info.pop("otp", None)
     device_info.pop("otp_expires_at", None)
 
