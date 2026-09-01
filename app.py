@@ -76,16 +76,30 @@ def save_device(chip_id, data):
 
 def load_db():
     devices_dict = {}
+    now = datetime.utcnow()
     try:
         if devices_collection is not None:
             for doc in devices_collection.find():
                 chip_id = doc.get("_id")
                 if chip_id:
+                    expires_at_str = doc.get("expires_at", "")
+                    status = doc.get("status", "active")
+                    
+                    # Tự động kiểm tra xem đã quá thời gian hiện tại chưa để cập nhật trạng thái expired
+                    if expires_at_str:
+                        try:
+                            expiry_time = datetime.fromisoformat(expires_at_str)
+                            if now > expiry_time and status != "expired":
+                                status = "expired"
+                                devices_collection.update_one({"_id": chip_id}, {"$set": {"status": "expired"}})
+                        except Exception:
+                            pass
+
                     devices_dict[chip_id] = {
                         "chip_id": chip_id,
                         "username": doc.get("username", ""),
-                        "status": doc.get("status", "active"),
-                        "expires_at": doc.get("expires_at", ""),
+                        "status": status,
+                        "expires_at": expires_at_str,
                         "trial": doc.get("trial", False),
                         "ota_pending": doc.get("ota_pending", False),
                         "created_at": doc.get("created_at", ""),
@@ -97,7 +111,7 @@ def load_db():
     return devices_dict
 
 
-# --- GIAO DIỆN TRANG ĐĂNG NHẬP (CHUẨN APPLE/VERCEL) ---
+# --- GIAO DIỆN TRANG ĐĂNG NHẬP ---
 LOGIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -180,7 +194,7 @@ LOGIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRANG QUẢN TRỊ (DASHBOARD CHUYÊN NGHIỆP) ---
+# --- GIAO DIỆN TRANG QUẢN TRỊ ---
 ADMIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -197,7 +211,7 @@ ADMIN_HTML = """
             background: #f5f5f7; 
             color: #1d1d1f; 
         }
-        .container { max-width: 1300px; margin: 40px auto; background: white; padding: 36px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.04); }
+        .container { max-width: 1350px; margin: 40px auto; background: white; padding: 36px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.04); }
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; }
         .brand { display: flex; align-items: center; gap: 14px; }
         .brand-icon { width: 44px; height: 44px; background: #007aff; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; font-weight: bold; }
@@ -222,7 +236,7 @@ ADMIN_HTML = """
 
         .table-container { width: 100%; overflow-x: auto; margin-top: 15px; }
         table { width: 100%; border-collapse: collapse; text-align: left; }
-        th, td { padding: 16px 14px; border-bottom: 1px solid #f0f0f5; font-size: 14px; }
+        th, td { padding: 16px 14px; border-bottom: 1px solid #f0f0f5; font-size: 14px; vertical-align: middle; }
         th { background: #fbfbfd; color: #86868b; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
         tr:hover td { background: #fafafc; }
         
@@ -237,10 +251,12 @@ ADMIN_HTML = """
         .delete-btn { background: #fff5f5; color: #e53935; }
         .delete-btn:hover { background: #ffebee; }
         
-        .inline-edit { display: flex; gap: 8px; align-items: center; }
-        .inline-edit input { padding: 8px 10px; font-size: 13px; }
-        .inline-edit button { padding: 8px 12px; font-size: 12px; background: #34c759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }
+        .inline-edit { display: flex; gap: 6px; align-items: center; }
+        .inline-edit input { padding: 7px 10px; font-size: 13px; }
+        .inline-edit button { padding: 7px 12px; font-size: 12px; background: #34c759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }
         .inline-edit button:hover { background: #28a745; }
+        .view-name-btn { background: #e5e5ea; color: #1d1d1f; border: none; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; }
+        .view-name-btn:hover { background: #d1d1d6; }
     </style>
 </head>
 <body>
@@ -286,7 +302,7 @@ ADMIN_HTML = """
                     <th>Chip ID</th>
                     <th>Tên Quản Lý</th>
                     <th>Trạng Thái</th>
-                    <th>Hết Hạn</th>
+                    <th>Ngày Hết Hạn</th>
                     <th>Trạng Thái OTA</th>
                     <th>Thao Tác</th>
                 </tr>
@@ -294,10 +310,13 @@ ADMIN_HTML = """
                 <tr>
                     <td><code style="background: #f0f0f5; padding: 4px 8px; border-radius: 6px; font-weight: 600;">{{ chip_id }}</code></td>
                     <td>
-                        <form action="/admin/update-username/{{ chip_id }}" method="POST" class="inline-edit">
-                            <input type="text" name="username" value="{{ info.username }}" placeholder="Tên...">
-                            <button type="submit">Lưu</button>
-                        </form>
+                        <div class="inline-edit">
+                            <form action="/admin/update-username/{{ chip_id }}" method="POST" class="inline-edit" style="display:flex; gap:6px;">
+                                <input type="text" name="username" value="{{ info.username }}" title="{{ info.username }}" placeholder="Tên..." style="max-width: 150px;">
+                                <button type="submit">Lưu</button>
+                            </form>
+                            <button type="button" class="view-name-btn" onclick="alert('Tên quản lý đầy đủ cho chip {{ chip_id }}:\\n\\n{{ info.username if info.username else \\'Chưa đặt tên\\' }}')">🔍 Xem</button>
+                        </div>
                     </td>
                     <td>
                         {% if info.status == 'active' %}
@@ -306,7 +325,12 @@ ADMIN_HTML = """
                             <span class="badge badge-expired">Hết hạn</span>
                         {% endif %}
                     </td>
-                    <td style="color: #555; font-weight: 500;">{{ info.expires_at[:10] if info.expires_at else '' }}</td>
+                    <td>
+                        <form action="/admin/update-expiry/{{ chip_id }}" method="POST" class="inline-edit">
+                            <input type="date" name="expiry_date" value="{{ info.expires_at[:10] if info.expires_at else '' }}" required style="width: 140px;">
+                            <button type="submit">Sửa</button>
+                        </form>
+                    </td>
                     <td>
                         {% if info.get('ota_pending', False) %}
                             <span class="action-btn ota-pending">⏳ Đang chờ OTA</span>
@@ -594,17 +618,20 @@ def admin_add():
             expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
             device = get_device(chip_id)
             sepay_secret = device.get("sepay_secret") if device and device.get("sepay_secret") else f"whsec_{uuid.uuid4().hex}"
+            
+            now = datetime.utcnow()
+            status = "active" if now <= expiry_date else "expired"
 
             if device:
                 device["expires_at"] = expiry_date.isoformat()
                 if username: 
                     device["username"] = username
-                device["status"] = "active"
+                device["status"] = status
                 device["sepay_secret"] = sepay_secret
             else:
                 device = {
                     "username": username,
-                    "status": "active",
+                    "status": status,
                     "expires_at": expiry_date.isoformat(),
                     "trial": False,
                     "ota_pending": False,
@@ -629,6 +656,28 @@ def update_username(chip_id):
     if device:
         device["username"] = username
         save_device(chip_id, device)
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/update-expiry/<path:chip_id>", methods=["POST"])
+def update_expiry(chip_id):
+    if "user" not in session:
+        return redirect(url_for("login"))
+    chip_id = chip_id.strip()
+    expiry_date_str = request.form.get("expiry_date")
+    device = get_device(chip_id)
+    
+    if device and expiry_date_str:
+        try:
+            expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            now = datetime.utcnow()
+            status = "active" if now <= expiry_date else "expired"
+            
+            device["expires_at"] = expiry_date.isoformat()
+            device["status"] = status
+            save_device(chip_id, device)
+        except ValueError:
+            pass
     return redirect(url_for("admin_panel"))
 
 
