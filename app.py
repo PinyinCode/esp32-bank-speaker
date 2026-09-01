@@ -74,6 +74,30 @@ def save_device(mac, data):
         print(f"Lỗi khi lưu thiết bị {mac}: {e}")
 
 
+def load_db():
+    """Hàm tải toàn bộ danh sách thiết bị từ MongoDB phục vụ hiển thị trên Admin Panel"""
+    devices_dict = {}
+    try:
+        if devices_collection is not None:
+            for doc in devices_collection.find():
+                mac = doc.get("_id")
+                if mac:
+                    devices_dict[mac] = {
+                        "username": doc.get("username", ""),
+                        "chip_id": doc.get("chip_id", ""),
+                        "status": doc.get("status", "active"),
+                        "expires_at": doc.get("expires_at", ""),
+                        "trial": doc.get("trial", False),
+                        "ota_pending": doc.get("ota_pending", False),
+                        "created_at": doc.get("created_at", ""),
+                        "sepay_secret": doc.get("sepay_secret", ""),
+                        "notifications": doc.get("notifications", []),
+                    }
+    except Exception as e:
+        print(f"Lỗi khi tải danh sách thiết bị: {e}")
+    return devices_dict
+
+
 # --- GIAO DIỆN TRANG ĐĂNG NHẬP ---
 LOGIN_HTML = """
 <!DOCTYPE html>
@@ -200,7 +224,7 @@ ADMIN_HTML = """
                     </form>
                 </td>
                 <td style="color: {{ '#34c759' if info.status == 'active' else '#ff3b30' }}; font-weight: 600;">{{ info.status }}</td>
-                <td>{{ info.expires_at }}</td>
+                <td>{{ info.expires_at[:10] if info.expires_at else '' }}</td>
                 <td>
                     {% if info.get('ota_pending', False) %}
                         <span class="ota-btn ota-active" style="padding: 4px 8px; font-size: 11px;">Đang chờ</span>
@@ -220,7 +244,7 @@ ADMIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRA CỨU CHO USER (ĐÃ BỎ EMAIL) ---
+# --- GIAO DIỆN TRA CỨU CHO USER ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -405,6 +429,7 @@ def login():
 
 @app.route("/login/authorize")
 def login_authorize():
+    # Thêm redirect_uri tương ứng nếu cần thiết lập chính xác trên GitHub OAuth App
     return redirect(f"https://github.com/login/oauth/authorize?client_id={GITHUB_CLIENT_ID}")
 
 
@@ -465,7 +490,7 @@ def admin_add():
         try:
             expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
             device = get_device(mac)
-            sepay_secret = device.get("sepay_secret") if device else f"whsec_{uuid.uuid4().hex}"
+            sepay_secret = device.get("sepay_secret") if device and device.get("sepay_secret") else f"whsec_{uuid.uuid4().hex}"
 
             if device:
                 device["expires_at"] = expiry_date.isoformat()
@@ -555,7 +580,7 @@ def admin_delete(mac):
     return redirect(url_for("admin_panel"))
 
 
-# --- CỔNG TRA CỨU CÔNG KHAI (KHÔNG CẦN EMAIL) ---
+# --- CỔNG TRA CỨU CÔNG KHAI ---
 @app.route("/device-portal", methods=["GET"])
 def device_portal():
     return render_template_string(USER_PORTAL_HTML)
@@ -576,7 +601,6 @@ def user_lookup():
     if not device_info:
         return jsonify({"error": "Địa chỉ MAC chưa tồn tại trên hệ thống. Vui lòng liên hệ quản trị viên."}), 404
 
-    # Khớp bảo mật Chip ID
     server_chip_id = device_info.get("chip_id", "").strip()
     if server_chip_id and server_chip_id != chip_id:
         return jsonify({"error": "Mã Chip ID không khớp với thiết bị trên hệ thống!"}), 403
