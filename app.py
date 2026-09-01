@@ -45,14 +45,14 @@ DEFAULT_FIRMWARE_URL = "https://esp32-linkdownload.onrender.com/xiaozhi.bin"
 DEFAULT_LATEST_VERSION = "v1.1.0"
 
 
-def get_device(mac):
+def get_device(chip_id):
     try:
-        if devices_collection is not None:
-            doc = devices_collection.find_one({"_id": mac})
+        if devices_collection is not None and chip_id:
+            doc = devices_collection.find_one({"_id": chip_id})
             if doc:
                 return {
+                    "chip_id": doc.get("_id", ""),
                     "username": doc.get("username", ""),
-                    "chip_id": doc.get("chip_id", ""),
                     "status": doc.get("status", "active"),
                     "expires_at": doc.get("expires_at", ""),
                     "trial": doc.get("trial", False),
@@ -62,16 +62,16 @@ def get_device(mac):
                     "notifications": doc.get("notifications", []),
                 }
     except Exception as e:
-        print(f"Lỗi khi tìm thiết bị {mac}: {e}")
+        print(f"Lỗi khi tìm thiết bị {chip_id}: {e}")
     return None
 
 
-def save_device(mac, data):
+def save_device(chip_id, data):
     try:
-        if devices_collection is not None:
-            devices_collection.update_one({"_id": mac}, {"$set": data}, upsert=True)
+        if devices_collection is not None and chip_id:
+            devices_collection.update_one({"_id": chip_id}, {"$set": data}, upsert=True)
     except Exception as e:
-        print(f"Lỗi khi lưu thiết bị {mac}: {e}")
+        print(f"Lỗi khi lưu thiết bị {chip_id}: {e}")
 
 
 def load_db():
@@ -79,11 +79,11 @@ def load_db():
     try:
         if devices_collection is not None:
             for doc in devices_collection.find():
-                mac = doc.get("_id")
-                if mac:
-                    devices_dict[mac] = {
+                chip_id = doc.get("_id")
+                if chip_id:
+                    devices_dict[chip_id] = {
+                        "chip_id": chip_id,
                         "username": doc.get("username", ""),
-                        "chip_id": doc.get("chip_id", ""),
                         "status": doc.get("status", "active"),
                         "expires_at": doc.get("expires_at", ""),
                         "trial": doc.get("trial", False),
@@ -155,14 +155,14 @@ ADMIN_HTML = """
         .delete-btn { background: #ff3b30; padding: 6px 10px; font-size: 12px; border-radius: 8px; color: white; text-decoration: none; display: inline-block; margin-left: 3px; font-weight: 600; }
         .form-group { background: #fafafc; border: 1px solid #e5e5ea; padding: 20px; border-radius: 14px; margin-bottom: 25px; }
         .form-row { display: flex; gap: 15px; flex-wrap: wrap; }
-        .form-col { flex: 1; min-width: 180px; }
+        .form-col { flex: 1; min-width: 220px; }
         label { font-size: 12px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h2>Quản lý Bản quyền & OTA ESP32</h2>
+            <h2>Quản lý Bản quyền & OTA ESP32 (Chip ID)</h2>
             <div class="nav-links">
                 <a href="/device-portal" class="portal-btn" target="_blank">Cổng Tra Cứu (User)</a>
                 <a href="/logout" class="logout-btn">Đăng xuất ({{ user }})</a>
@@ -175,16 +175,12 @@ ADMIN_HTML = """
             <form action="/admin/add" method="POST">
                 <div class="form-row">
                     <div class="form-col">
-                        <label>Địa chỉ MAC:</label>
-                        <input type="text" name="mac" placeholder="24:0A:C4:..." required style="width: 100%;">
-                    </div>
-                    <div class="form-col">
                         <label>Chip ID:</label>
-                        <input type="text" name="chip_id" placeholder="ESP32S3-..." required style="width: 100%;">
+                        <input type="text" name="chip_id" placeholder="Nhập Chip ID..." required style="width: 100%;">
                     </div>
                     <div class="form-col">
                         <label>Tên thiết bị:</label>
-                        <input type="text" name="username" placeholder="Tên..." style="width: 100%;">
+                        <input type="text" name="username" placeholder="Tên quản lý..." style="width: 100%;">
                     </div>
                     <div class="form-col">
                         <label>Ngày hết hạn:</label>
@@ -199,7 +195,6 @@ ADMIN_HTML = """
         <h3 style="font-size: 15px; color: #1c1c1e;">Danh sách thiết bị đã lưu</h3>
         <table>
             <tr>
-                <th>Địa chỉ MAC</th>
                 <th>Chip ID</th>
                 <th>Tên quản lý</th>
                 <th>Trạng thái</th>
@@ -207,17 +202,11 @@ ADMIN_HTML = """
                 <th>OTA</th>
                 <th>Thao tác</th>
             </tr>
-            {% for mac, info in devices.items() %}
+            {% for chip_id, info in devices.items() %}
             <tr>
-                <td><b>{{ mac }}</b></td>
+                <td><b>{{ chip_id }}</b></td>
                 <td>
-                    <form action="/admin/update-chipid/{{ mac }}" method="POST" style="display: flex; gap: 4px; margin: 0;">
-                        <input type="text" name="chip_id" value="{{ info.chip_id }}" placeholder="Chip ID..." style="flex: 1; font-size: 12px;">
-                        <button type="submit" style="padding: 4px 8px; font-size: 11px;">Lưu</button>
-                    </form>
-                </td>
-                <td>
-                    <form action="/admin/update-username/{{ mac }}" method="POST" style="display: flex; gap: 4px; margin: 0;">
+                    <form action="/admin/update-username/{{ chip_id }}" method="POST" style="display: flex; gap: 4px; margin: 0;">
                         <input type="text" name="username" value="{{ info.username }}" placeholder="Tên..." style="flex: 1; font-size: 12px;">
                         <button type="submit" style="padding: 4px 8px; font-size: 11px;">Lưu</button>
                     </form>
@@ -227,13 +216,13 @@ ADMIN_HTML = """
                 <td>
                     {% if info.get('ota_pending', False) %}
                         <span class="ota-btn ota-active" style="padding: 4px 8px; font-size: 11px;">Đang chờ</span>
-                        <a href="/admin/cancel-ota/{{ mac }}" style="font-size:11px; color:#ff3b30; text-decoration: none; margin-left: 3px; font-weight: bold;">Hủy</a>
+                        <a href="/admin/cancel-ota/{{ chip_id }}" style="font-size:11px; color:#ff3b30; text-decoration: none; margin-left: 3px; font-weight: bold;">Hủy</a>
                     {% else %}
-                        <a href="/admin/trigger-ota/{{ mac }}" class="ota-btn" style="padding: 4px 8px; font-size: 11px;">Kích hoạt</a>
+                        <a href="/admin/trigger-ota/{{ chip_id }}" class="ota-btn" style="padding: 4px 8px; font-size: 11px;">Kích hoạt</a>
                     {% endif %}
                 </td>
                 <td>
-                    <a href="/admin/delete/{{ mac }}" class="delete-btn" onclick="return confirm('Xóa thiết bị này?');" style="padding: 4px 8px; font-size: 11px;">Xóa</a>
+                    <a href="/admin/delete/{{ chip_id }}" class="delete-btn" onclick="return confirm('Xóa thiết bị này?');" style="padding: 4px 8px; font-size: 11px;">Xóa</a>
                 </td>
             </tr>
             {% endfor %}
@@ -276,17 +265,13 @@ USER_PORTAL_HTML = """
 </head>
 <body>
     <div class="card">
-        <h2>Cổng Thông Tin Loa Ngân Hàng</h2>
-        <p class="subtitle">Nhập MAC và Chip ID để Tra cứu & Cập nhật Firmware</p>
+        <h2>Cổng Thông Tin Thiết Bị</h2>
+        <p class="subtitle">Nhập Chip ID để Tra cứu & Cập nhật Firmware</p>
         
         <div id="searchSection">
             <div class="form-group">
-                <label>Địa chỉ MAC:</label>
-                <input type="text" id="macInput" placeholder="Ví dụ: 24:0A:C4:12:34:56">
-            </div>
-            <div class="form-group">
                 <label>Chip ID:</label>
-                <input type="text" id="chipIdInput" placeholder="Ví dụ: ESP32S3-12345678">
+                <input type="text" id="chipIdInput" placeholder="Ví dụ: A1B2C3D4E5F6">
             </div>
             <button class="btn" id="searchBtn" type="button">Tra cứu thông tin</button>
         </div>
@@ -322,16 +307,12 @@ USER_PORTAL_HTML = """
     <script>
         document.addEventListener("DOMContentLoaded", function() {
             document.getElementById('searchBtn').addEventListener('click', async function() {
-                let mac = document.getElementById('macInput').value.trim();
                 let chipId = document.getElementById('chipIdInput').value.trim();
                 
-                if (!mac || !chipId) {
-                    alert('Vui lòng nhập đầy đủ MAC và Chip ID!');
+                if (!chipId) {
+                    alert('Vui lòng nhập Chip ID!');
                     return;
                 }
-
-                mac = mac.toUpperCase().replace(/-/g, ':');
-                document.getElementById('macInput').value = mac;
 
                 const btn = this;
                 btn.disabled = true;
@@ -341,7 +322,7 @@ USER_PORTAL_HTML = """
                     const response = await fetch('/api/user/lookup', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ mac: mac, chip_id: chipId })
+                        body: JSON.stringify({ chip_id: chipId })
                     });
                     const data = await response.json();
 
@@ -376,17 +357,14 @@ USER_PORTAL_HTML = """
             });
 
             document.getElementById('updateBtn').addEventListener('click', async function() {
-                let mac = document.getElementById('macInput').value.trim();
                 let chipId = document.getElementById('chipIdInput').value.trim();
-                if (!mac || !chipId) return;
-
-                mac = mac.toUpperCase().replace(/-/g, ':');
+                if (!chipId) return;
 
                 try {
                     const response = await fetch('/api/user/request-ota', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ mac: mac, chip_id: chipId })
+                        body: JSON.stringify({ chip_id: chipId })
                     });
                     const data = await response.json();
                     if (response.ok) {
@@ -476,30 +454,27 @@ def admin_add():
     if "user" not in session:
         return redirect(url_for("login"))
 
-    mac = request.form.get("mac")
     chip_id = request.form.get("chip_id", "").strip()
     username = request.form.get("username", "").strip()
     expiry_date_str = request.form.get("expiry_date")
 
     import uuid
 
-    if mac and expiry_date_str:
-        mac = mac.strip().upper().replace("-", ":")
+    if chip_id and expiry_date_str:
         try:
             expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
-            device = get_device(mac)
+            device = get_device(chip_id)
             sepay_secret = device.get("sepay_secret") if device and device.get("sepay_secret") else f"whsec_{uuid.uuid4().hex}"
 
             if device:
                 device["expires_at"] = expiry_date.isoformat()
-                if username: device["username"] = username
-                if chip_id: device["chip_id"] = chip_id
+                if username: 
+                    device["username"] = username
                 device["status"] = "active"
                 device["sepay_secret"] = sepay_secret
             else:
                 device = {
                     "username": username,
-                    "chip_id": chip_id,
                     "status": "active",
                     "expires_at": expiry_date.isoformat(),
                     "trial": False,
@@ -508,73 +483,60 @@ def admin_add():
                     "sepay_secret": sepay_secret,
                     "notifications": [],
                 }
-            save_device(mac, device)
+            save_device(chip_id, device)
         except ValueError:
             pass
 
     return redirect(url_for("admin_panel"))
 
 
-@app.route("/admin/update-chipid/<path:mac>", methods=["POST"])
-def update_chipid(mac):
+@app.route("/admin/update-username/<path:chip_id>", methods=["POST"])
+def update_username(chip_id):
     if "user" not in session:
         return redirect(url_for("login"))
-    mac = mac.strip().upper().replace("-", ":")
-    chip_id = request.form.get("chip_id", "").strip()
-    device = get_device(mac)
-    if device:
-        device["chip_id"] = chip_id
-        save_device(mac, device)
-    return redirect(url_for("admin_panel"))
-
-
-@app.route("/admin/update-username/<path:mac>", methods=["POST"])
-def update_username(mac):
-    if "user" not in session:
-        return redirect(url_for("login"))
-    mac = mac.strip().upper().replace("-", ":")
+    chip_id = chip_id.strip()
     username = request.form.get("username", "").strip()
-    device = get_device(mac)
+    device = get_device(chip_id)
     if device:
         device["username"] = username
-        save_device(mac, device)
+        save_device(chip_id, device)
     return redirect(url_for("admin_panel"))
 
 
-@app.route("/admin/trigger-ota/<path:mac>", methods=["GET"])
-def trigger_ota(mac):
+@app.route("/admin/trigger-ota/<path:chip_id>", methods=["GET"])
+def trigger_ota(chip_id):
     if "user" not in session:
         return redirect(url_for("login"))
-    mac = mac.strip().upper().replace("-", ":")
-    device = get_device(mac)
+    chip_id = chip_id.strip()
+    device = get_device(chip_id)
     if device:
         device["ota_pending"] = True
-        save_device(mac, device)
+        save_device(chip_id, device)
     return redirect(url_for("admin_panel"))
 
 
-@app.route("/admin/cancel-ota/<path:mac>", methods=["GET"])
-def cancel_ota(mac):
+@app.route("/admin/cancel-ota/<path:chip_id>", methods=["GET"])
+def cancel_ota(chip_id):
     if "user" not in session:
         return redirect(url_for("login"))
-    mac = mac.strip().upper().replace("-", ":")
-    device = get_device(mac)
+    chip_id = chip_id.strip()
+    device = get_device(chip_id)
     if device:
         device["ota_pending"] = False
-        save_device(mac, device)
+        save_device(chip_id, device)
     return redirect(url_for("admin_panel"))
 
 
-@app.route("/admin/delete/<path:mac>", methods=["GET"])
-def admin_delete(mac):
+@app.route("/admin/delete/<path:chip_id>", methods=["GET"])
+def admin_delete(chip_id):
     if "user" not in session:
         return redirect(url_for("login"))
-    mac = mac.strip().upper().replace("-", ":")
+    chip_id = chip_id.strip()
     try:
         if devices_collection is not None:
-            devices_collection.delete_one({"_id": mac})
+            devices_collection.delete_one({"_id": chip_id})
     except Exception as e:
-        print(f"Lỗi khi xóa thiết bị {mac}: {e}")
+        print(f"Lỗi khi xóa thiết bị {chip_id}: {e}")
     return redirect(url_for("admin_panel"))
 
 
@@ -587,26 +549,20 @@ def device_portal():
 @app.route("/api/user/lookup", methods=["POST"])
 def user_lookup():
     data = request.get_json() or {}
-    mac_address = data.get("mac")
     chip_id = data.get("chip_id", "").strip()
 
-    if not mac_address or not chip_id:
-        return jsonify({"error": "Vui lòng nhập đầy đủ MAC và Chip ID"}), 400
+    if not chip_id:
+        return jsonify({"error": "Vui lòng nhập Chip ID"}), 400
 
-    mac_address = mac_address.strip().upper().replace("-", ":")
-    device_info = get_device(mac_address)
+    device_info = get_device(chip_id)
 
     if not device_info:
-        return jsonify({"error": "Địa chỉ MAC chưa tồn tại trên hệ thống. Vui lòng liên hệ quản trị viên."}), 404
-
-    server_chip_id = device_info.get("chip_id", "").strip()
-    if server_chip_id and server_chip_id != chip_id:
-        return jsonify({"error": "Mã Chip ID không khớp với thiết bị trên hệ thống!"}), 403
+        return jsonify({"error": "Chip ID chưa tồn tại trên hệ thống. Vui lòng liên hệ quản trị viên."}), 404
 
     import uuid
     if not device_info.get("sepay_secret"):
         device_info["sepay_secret"] = f"whsec_{uuid.uuid4().hex}"
-        save_device(mac_address, device_info)
+        save_device(chip_id, device_info)
 
     now = datetime.utcnow()
     try:
@@ -616,13 +572,12 @@ def user_lookup():
 
     status = "active" if now <= expiry_time else "expired"
     host_url = request.host_url.rstrip("/")
-    webhook_url = f"{host_url}/api/bank-webhook/{mac_address}"
+    webhook_url = f"{host_url}/api/bank-webhook/{chip_id}"
 
     return jsonify(
         {
             "success": True,
-            "mac": mac_address,
-            "chip_id": device_info.get("chip_id", ""),
+            "chip_id": chip_id,
             "username": device_info.get("username", ""),
             "status": status,
             "expires_at": device_info["expires_at"],
@@ -635,21 +590,15 @@ def user_lookup():
 @app.route("/api/user/request-ota", methods=["POST"])
 def user_request_ota():
     data = request.get_json() or {}
-    mac_address = data.get("mac")
     chip_id = data.get("chip_id", "").strip()
 
-    if not mac_address or not chip_id:
-        return jsonify({"error": "Thiếu thông tin MAC hoặc Chip ID"}), 400
+    if not chip_id:
+        return jsonify({"error": "Thiếu thông tin Chip ID"}), 400
 
-    mac_address = mac_address.strip().upper().replace("-", ":")
-    device_info = get_device(mac_address)
+    device_info = get_device(chip_id)
 
     if not device_info:
         return jsonify({"error": "Thiết bị không tồn tại"}), 404
-
-    server_chip_id = device_info.get("chip_id", "").strip()
-    if server_chip_id and server_chip_id != chip_id:
-        return jsonify({"error": "Chip ID không khớp, từ chối cập nhật!"}), 403
 
     now = datetime.utcnow()
     try:
@@ -661,30 +610,27 @@ def user_request_ota():
         return jsonify({"error": "Bản quyền thiết bị đã hết hạn!"}), 403
 
     device_info["ota_pending"] = True
-    save_device(mac_address, device_info)
+    save_device(chip_id, device_info)
 
     return jsonify({"success": True, "message": "Đã kích hoạt chế độ cập nhật OTA."})
 
 
-# --- API DÀNH CHO ESP32 (KHÔNG BẮT BUỘC CHIP_ID) ---
+# --- API DÀNH CHO ESP32 (DÙNG CHIP_ID) ---
 @app.route("/api/check-license", methods=["GET"])
 def check_license():
-    mac_address = request.args.get("mac")
     chip_id = request.args.get("chip_id", "").strip()
 
-    if not mac_address:
-        return jsonify({"error": "Missing mac address parameter", "status": "error"}), 400
+    if not chip_id:
+        return jsonify({"error": "Missing chip_id parameter", "status": "error"}), 400
 
-    mac_address = mac_address.upper().replace("-", ":")
     now = datetime.utcnow()
-    device_info = get_device(mac_address)
+    device_info = get_device(chip_id)
 
     import uuid
     if not device_info:
         expiry_date = now + timedelta(days=30)
         device_info = {
             "username": "",
-            "chip_id": chip_id,
             "status": "active",
             "expires_at": expiry_date.isoformat(),
             "trial": True,
@@ -693,20 +639,16 @@ def check_license():
             "sepay_secret": f"whsec_{uuid.uuid4().hex}",
             "notifications": [],
         }
-        save_device(mac_address, device_info)
-    else:
-        if chip_id and not device_info.get("chip_id"):
-            device_info["chip_id"] = chip_id
-            save_device(mac_address, device_info)
+        save_device(chip_id, device_info)
 
     expiry_time = datetime.fromisoformat(device_info["expires_at"])
 
     if now > expiry_time:
         device_info["status"] = "expired"
-        save_device(mac_address, device_info)
+        save_device(chip_id, device_info)
         return jsonify(
             {
-                "mac": mac_address,
+                "chip_id": chip_id,
                 "status": "expired",
                 "message": "License expired.",
                 "expires_at": device_info["expires_at"],
@@ -715,7 +657,7 @@ def check_license():
 
     return jsonify(
         {
-            "mac": mac_address,
+            "chip_id": chip_id,
             "status": "active",
             "message": "License is valid.",
             "trial": device_info["trial"],
@@ -726,22 +668,15 @@ def check_license():
 
 @app.route("/api/check-update", methods=["GET"])
 def check_update():
-    mac_address = request.args.get("mac")
     chip_id = request.args.get("chip_id", "").strip()
 
-    if not mac_address:
-        return jsonify({"update_available": False, "error": "Missing MAC address"}), 400
+    if not chip_id:
+        return jsonify({"update_available": False, "error": "Missing chip_id"}), 400
 
-    mac_address = mac_address.upper().replace("-", ":")
-    device_info = get_device(mac_address)
+    device_info = get_device(chip_id)
 
     if not device_info:
         return jsonify({"update_available": False, "message": "Device not registered."})
-
-    # Chỉ so sánh chip_id nếu database có lưu và request có gửi lên
-    server_chip_id = device_info.get("chip_id", "").strip()
-    if server_chip_id and chip_id and server_chip_id != chip_id:
-        return jsonify({"update_available": False, "message": "Chip ID mismatch. Update denied."})
 
     now = datetime.utcnow()
     try:
@@ -752,12 +687,12 @@ def check_update():
     if now > expiry_time:
         device_info["status"] = "expired"
         device_info["ota_pending"] = False
-        save_device(mac_address, device_info)
+        save_device(chip_id, device_info)
         return jsonify({"update_available": False, "message": "License expired. Update denied."})
 
     if device_info.get("ota_pending", False):
         device_info["ota_pending"] = False
-        save_device(mac_address, device_info)
+        save_device(chip_id, device_info)
 
         return jsonify(
             {
@@ -771,16 +706,16 @@ def check_update():
     return jsonify({"update_available": False})
 
 
-@app.route("/api/bank-webhook/<path:mac>", methods=["POST"])
-def bank_webhook(mac):
+@app.route("/api/bank-webhook/<path:chip_id>", methods=["POST"])
+def bank_webhook(chip_id):
     if devices_collection is None:
         return jsonify({"success": False, "error": "Database error"}), 500
 
-    mac_clean = mac.strip().upper().replace("-", ":")
-    device = get_device(mac_clean)
+    chip_id_clean = chip_id.strip()
+    device = get_device(chip_id_clean)
 
     if not device:
-        return jsonify({"success": False, "error": "Device MAC not registered in system"}), 404
+        return jsonify({"success": False, "error": "Chip ID not registered in system"}), 404
 
     data = request.get_json() or {}
     amount = data.get("transferAmount", 0)
@@ -800,7 +735,7 @@ def bank_webhook(mac):
             }
         )
 
-        save_device(mac_clean, device)
+        save_device(chip_id_clean, device)
         return jsonify({"success": True}), 200
 
     return jsonify({"success": False, "error": "Invalid amount"}), 400
@@ -808,12 +743,11 @@ def bank_webhook(mac):
 
 @app.route("/api/check-bank-audio", methods=["GET"])
 def check_bank_audio():
-    mac_address = request.args.get("mac")
-    if not mac_address:
+    chip_id = request.args.get("chip_id", "").strip()
+    if not chip_id:
         return jsonify({"has_notification": False}), 400
 
-    mac_clean = mac_address.strip().upper().replace("-", ":")
-    device = get_device(mac_clean)
+    device = get_device(chip_id)
 
     if not device:
         return jsonify({"has_notification": False}), 404
@@ -821,7 +755,7 @@ def check_bank_audio():
     notifications = device.get("notifications", [])
     if len(notifications) > 0:
         notif = notifications.pop(0)
-        save_device(mac_clean, device)
+        save_device(chip_id, device)
 
         msg = notif["message"]
         encoded_msg = requests.utils.quote(msg)
@@ -830,7 +764,7 @@ def check_bank_audio():
         return jsonify(
             {
                 "has_notification": True,
-                "mac": mac_clean,
+                "chip_id": chip_id,
                 "message": msg,
                 "audio_url": audio_url,
             }
