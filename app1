@@ -96,28 +96,78 @@ def save_device(mac, data):
         print(f"Lỗi khi lưu thiết bị {mac}: {e}")
 
 
-# --- GIAO DIỆN TRANG ĐĂNG NHẬP ---
+# --- GIAO DIỆN TRANG ĐĂNG NHẬP (CHUẨN UI iOS PHẲNG, RỘNG RÃI) ---
 LOGIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Đăng nhập - Quản lý OTA & Loa ESP32</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng nhập - Quản lý OTA ESP32</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; color: #333; }
-        .login-card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); text-align: center; width: 350px; }
-        h2 { color: #007BFF; margin-bottom: 10px; }
-        p { color: #666; font-size: 14px; margin-bottom: 25px; }
-        .github-btn { background: #24292e; color: white; padding: 12px 20px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold; width: 100%; box-sizing: border-box; }
-        .github-btn:hover { background: #2c3238; }
-        .portal-link { display: block; margin-top: 15px; font-size: 13px; color: #007BFF; text-decoration: none; }
-        .portal-link:hover { text-decoration: underline; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            margin: 0; 
+            background: #f2f2f7; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            color: #1c1c1e; 
+        }
+        .login-card { 
+            background: white; 
+            width: 90%; 
+            max-width: 420px; 
+            padding: 40px 30px; 
+            border-radius: 24px; 
+            box-shadow: 0 12px 40px rgba(0,0,0,0.06); 
+            text-align: center; 
+            box-sizing: border-box; 
+        }
+        h2 { 
+            color: #007aff; 
+            font-size: 24px; 
+            margin-bottom: 8px; 
+            font-weight: 700;
+        }
+        p { 
+            color: #8e8e93; 
+            font-size: 14px; 
+            margin-bottom: 30px; 
+        }
+        .github-btn { 
+            background: #24292e; 
+            color: white; 
+            padding: 14px 20px; 
+            text-decoration: none; 
+            border-radius: 12px; 
+            display: block; 
+            font-weight: 600; 
+            font-size: 15px;
+            box-sizing: border-box; 
+            transition: background 0.2s;
+        }
+        .github-btn:hover { 
+            background: #1b1f23; 
+        }
+        .portal-link { 
+            display: inline-block; 
+            margin-top: 20px; 
+            font-size: 14px; 
+            color: #007aff; 
+            text-decoration: none; 
+            font-weight: 500;
+        }
+        .portal-link:hover { 
+            text-decoration: underline; 
+        }
     </style>
 </head>
 <body>
     <div class="login-card">
         <h2>Quản Trị ESP32</h2>
-        <p>Vui lòng xác thực tài khoản quản trị</p>
+        <p>Vui lòng xác thực tài khoản quản trị hệ thống</p>
         <a href="/login/authorize" class="github-btn">Đăng nhập bằng GitHub</a>
         <a href="/device-portal" class="portal-link">🔍 Vào cổng tra cứu & cấu hình SePay</a>
     </div>
@@ -125,37 +175,40 @@ LOGIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRANG QUẢN TRỊ ADMIN ---
+# --- GIAO DIỆN TRANG QUẢN TRỊ ---
 ADMIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Quản lý Bản quyền & OTA ESP32</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background: #f4f7f6; color: #333; }
-        .container { max-width: 1050px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .header { display: flex; justify-content: space-between; align-items: center; }
-        h2 { color: #007BFF; margin: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; background: #f2f2f7; color: #1c1c1e; }
+        .container { max-width: 1050px; margin: auto; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        h2 { color: #007aff; margin: 0; font-size: 20px; }
         .nav-links { display: flex; gap: 10px; align-items: center; }
-        .portal-btn { background: #17a2b8; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 14px; }
-        .portal-btn:hover { background: #138496; }
-        .logout-btn { background: #dc3545; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 14px; }
-        .logout-btn:hover { background: #c82333; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 10px; border: 1px solid #ddd; text-align: left; font-size: 14px; }
-        th { background: #007BFF; color: white; }
-        input, select, button { padding: 6px 8px; margin: 3px 0; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
-        button { background: #28a745; color: white; border: none; cursor: pointer; }
-        button:hover { background: #218838; }
-        .ota-btn { background: #17a2b8; padding: 5px 8px; font-size: 12px; border-radius: 4px; color: white; text-decoration: none; display: inline-block; }
-        .ota-btn:hover { background: #138496; }
-        .ota-active { background: #ffc107; color: #212529; font-weight: bold; }
-        .delete-btn { background: #dc3545; padding: 5px 8px; font-size: 12px; border-radius: 4px; color: white; text-decoration: none; display: inline-block; margin-left: 3px; }
-        .delete-btn:hover { background: #c82333; }
-        .form-group { background: #e9ecef; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
-        .form-row { display: flex; gap: 15px; }
-        .form-col { flex: 1; }
+        .portal-btn { background: #5856d6; color: white; padding: 8px 14px; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: 600; }
+        .portal-btn:hover { background: #4a47b1; }
+        .logout-btn { background: #ff3b30; color: white; padding: 8px 14px; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: 600; }
+        .logout-btn:hover { background: #d70015; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; overflow-x: auto; display: block; }
+        th, td { padding: 12px 10px; border-bottom: 1px solid #e5e5ea; text-align: left; font-size: 14px; }
+        th { background: #fafafc; color: #3a3a3c; font-weight: 600; }
+        input, select, button { padding: 8px 10px; margin: 3px 0; border: 1px solid #c7c7cc; border-radius: 8px; font-size: 13px; outline: none; }
+        input:focus { border-color: #007aff; }
+        button { background: #34c759; color: white; border: none; cursor: pointer; font-weight: 600; }
+        button:hover { background: #28a745; }
+        .ota-btn { background: #007aff; padding: 6px 10px; font-size: 12px; border-radius: 8px; color: white; text-decoration: none; display: inline-block; font-weight: 600; }
+        .ota-btn:hover { background: #0056b3; }
+        .ota-active { background: #ffcc00; color: #1c1c1e; font-weight: bold; }
+        .delete-btn { background: #ff3b30; padding: 6px 10px; font-size: 12px; border-radius: 8px; color: white; text-decoration: none; display: inline-block; margin-left: 3px; font-weight: 600; }
+        .delete-btn:hover { background: #d70015; }
+        .form-group { background: #fafafc; border: 1px solid #e5e5ea; padding: 20px; border-radius: 14px; margin-bottom: 25px; }
+        .form-row { display: flex; gap: 15px; flex-wrap: wrap; }
+        .form-col { flex: 1; min-width: 200px; }
+        label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 5px; }
     </style>
 </head>
 <body>
@@ -167,31 +220,31 @@ ADMIN_HTML = """
                 <a href="/logout" class="logout-btn">Đăng xuất ({{ user }})</a>
             </div>
         </div>
-        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #e5e5ea;">
         
         <div class="form-group">
-            <h3>Thêm hoặc Cập nhật thiết bị mới</h3>
+            <h3 style="margin-top: 0; font-size: 16px; color: #1c1c1e;">Thêm hoặc Cập nhật thiết bị mới</h3>
             <form action="/admin/add" method="POST">
                 <div class="form-row">
                     <div class="form-col">
-                        <label>Địa chỉ MAC:</label><br>
-                        <input type="text" name="mac" placeholder="Ví dụ: 24:0A:C4:12:34:56" required style="width: 100%;">
+                        <label>Địa chỉ MAC:</label>
+                        <input type="text" name="mac" placeholder="Ví dụ: 24:0A:C4:12:34:56" required style="width: 100%; box-sizing: border-box;">
                     </div>
                     <div class="form-col">
-                        <label>Tên quản lý / Username:</label><br>
-                        <input type="text" name="username" placeholder="Ví dụ: Thiết bị phòng khách" style="width: 100%;">
+                        <label>Tên quản lý / Username:</label>
+                        <input type="text" name="username" placeholder="Ví dụ: Loa Quầy Thu Ngân" style="width: 100%; box-sizing: border-box;">
                     </div>
                     <div class="form-col">
-                        <label>Ngày hết hạn:</label><br>
-                        <input type="date" name="expiry_date" required style="width: 100%;">
+                        <label>Ngày hết hạn:</label>
+                        <input type="date" name="expiry_date" required style="width: 100%; box-sizing: border-box;">
                     </div>
                 </div>
                 <br>
-                <button type="submit">Lưu / Cập nhật thiết bị</button>
+                <button type="submit" style="padding: 10px 20px; border-radius: 10px;">Lưu / Cập nhật thiết bị</button>
             </form>
         </div>
 
-        <h3>Danh sách thiết bị đã lưu</h3>
+        <h3 style="font-size: 16px; color: #1c1c1e;">Danh sách thiết bị đã lưu</h3>
         <table>
             <tr>
                 <th>Địa chỉ MAC</th>
@@ -207,15 +260,15 @@ ADMIN_HTML = """
                 <td>
                     <form action="/admin/update-username/{{ mac }}" method="POST" style="display: flex; gap: 5px; margin: 0;">
                         <input type="text" name="username" value="{{ info.username }}" placeholder="Nhập tên..." style="flex: 1;">
-                        <button type="submit" style="padding: 4px 8px; font-size: 12px;">Lưu</button>
+                        <button type="submit" style="padding: 6px 10px; font-size: 12px; border-radius: 8px;">Lưu</button>
                     </form>
                 </td>
-                <td style="color: {{ 'green' if info.status == 'active' else 'red' }};">{{ info.status }}</td>
+                <td style="color: {{ '#34c759' if info.status == 'active' else '#ff3b30' }}; font-weight: 600;">{{ info.status }}</td>
                 <td>{{ info.expires_at }}</td>
                 <td>
                     {% if info.get('ota_pending', False) %}
-                        <span class="ota-btn ota-active">Đang chờ...</span>
-                        <a href="/admin/cancel-ota/{{ mac }}" style="font-size:11px; color:red; margin-left: 3px;">Hủy</a>
+                        <span class="ota-btn ota-active" style="padding: 6px 10px; border-radius: 8px;">Đang chờ...</span>
+                        <a href="/admin/cancel-ota/{{ mac }}" style="font-size:12px; color:#ff3b30; text-decoration: none; margin-left: 5px; font-weight: 600;">Hủy</a>
                     {% else %}
                         <a href="/admin/trigger-ota/{{ mac }}" class="ota-btn">Cập nhật OTA</a>
                     {% endif %}
@@ -231,7 +284,7 @@ ADMIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRA CỨU CHO USER (CÓ WEBHOOK & KEY SEPAY) ---
+# --- GIAO DIỆN TRA CỨU CHO USER (UI iOS PHẲNG) ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -241,23 +294,23 @@ USER_PORTAL_HTML = """
     <title>Cổng Cấu Hình SePay & Firmware ESP32</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f2f2f7; color: #1c1c1e; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: white; width: 440px; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); box-sizing: border-box; text-align: center; }
-        h2 { font-size: 20px; margin-bottom: 8px; color: #007aff; }
-        p.subtitle { font-size: 13px; color: #8e8e93; margin-bottom: 20px; }
+        .card { background: white; width: 90%; max-width: 440px; padding: 30px; border-radius: 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.06); box-sizing: border-box; text-align: center; }
+        h2 { font-size: 22px; margin-bottom: 8px; color: #007aff; font-weight: 700; }
+        p.subtitle { font-size: 13px; color: #8e8e93; margin-bottom: 25px; }
         .form-group { margin-bottom: 15px; text-align: left; }
         label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 5px; }
-        input { width: 100%; padding: 12px; border: 1px solid #c7c7cc; border-radius: 10px; font-size: 14px; box-sizing: border-box; outline: none; background: #fff; }
+        input { width: 100%; padding: 12px; border: 1px solid #c7c7cc; border-radius: 12px; font-size: 14px; box-sizing: border-box; outline: none; background: #fff; }
         input:focus { border-color: #007aff; }
-        .btn { width: 100%; padding: 12px; background: #007aff; color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        .btn { width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
         .btn:hover { background: #0056b3; }
-        .btn-green { background: #34c759; margin-top: 10px; }
+        .btn-green { background: #34c759; margin-top: 15px; }
         .btn-green:hover { background: #28a745; }
-        .result-box { margin-top: 20px; background: #fafafc; border: 1px solid #e5e5ea; border-radius: 12px; padding: 15px; text-align: left; font-size: 13px; display: none; }
-        .result-row { margin: 8px 0; }
+        .result-box { margin-top: 20px; background: #fafafc; border: 1px solid #e5e5ea; border-radius: 16px; padding: 20px; text-align: left; font-size: 13px; display: none; }
+        .result-row { margin: 10px 0; }
         .status-active { color: #34c759; font-weight: bold; }
         .status-expired { color: #ff3b30; font-weight: bold; }
-        .copy-row { display: flex; gap: 5px; margin-top: 4px; }
-        .copy-btn { padding: 6px 12px; background: #e5e5ea; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; }
+        .copy-row { display: flex; gap: 8px; margin-top: 6px; }
+        .copy-btn { padding: 0 14px; background: #e5e5ea; border: none; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; color: #1c1c1e; }
         .copy-btn:hover { background: #d1d1d6; }
     </style>
 </head>
@@ -277,7 +330,7 @@ USER_PORTAL_HTML = """
             <div class="result-row"><span>Trạng thái:</span> <span id="resStatus">-</span></div>
             <div class="result-row"><span>Hết hạn lúc:</span> <b id="resExpiry">-</b></div>
             
-            <hr style="border: 0; border-top: 1px solid #e5e5ea; margin: 12px 0;">
+            <hr style="border: 0; border-top: 1px solid #e5e5ea; margin: 15px 0;">
 
             <div class="result-row">
                 <label>SePay Webhook URL:</label>
@@ -287,7 +340,7 @@ USER_PORTAL_HTML = """
                 </div>
             </div>
 
-            <div class="result-row" style="margin-top: 10px;">
+            <div class="result-row" style="margin-top: 12px;">
                 <label>SePay Secret / Key:</label>
                 <div class="copy-row">
                     <input type="text" id="resSecret" readonly>
@@ -628,7 +681,7 @@ def user_request_ota():
     return jsonify({"success": True, "message": "Đã kích hoạt chế độ cập nhật OTA."})
 
 
-# --- API DÀNH CHO ESP32 (KIỂM TRA LICENSE) ---
+# --- API DÀNH CHO ESP32 ---
 @app.route("/api/check-license", methods=["GET"])
 def check_license():
     mac_address = request.args.get("mac")
@@ -674,7 +727,6 @@ def check_license():
     })
 
 
-# --- API DÀNH CHO ESP32 (KIỂM TRA UPDATE OTA) ---
 @app.route("/api/check-update", methods=["GET"])
 def check_update():
     mac_address = request.args.get("mac")
@@ -784,5 +836,4 @@ def check_bank_audio():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=10000)
