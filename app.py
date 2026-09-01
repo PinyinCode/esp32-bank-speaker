@@ -85,7 +85,6 @@ def load_db():
                     expires_at_str = doc.get("expires_at", "")
                     status = doc.get("status", "active")
                     
-                    # Tự động kiểm tra xem đã quá thời gian hiện tại chưa để cập nhật trạng thái expired
                     if expires_at_str:
                         try:
                             expiry_time = datetime.fromisoformat(expires_at_str)
@@ -544,7 +543,7 @@ USER_PORTAL_HTML = """
 """
 
 
-# --- ROUTE XÁC THỰC & ĐĂNG NHẬP ADMIN ---
+# --- ROUTE XÁC THỰC & ĐĂNG NHẬP ADMIN (GITHUB OAUTH) ---
 @app.route("/")
 def home():
     return redirect(url_for("login"))
@@ -583,10 +582,11 @@ def callback():
         headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
     ).json()
 
+    # Kiểm tra khớp tài khoản GitHub đã định nghĩa
     if user_data.get("login", "").lower() == YOUR_GITHUB_USERNAME.lower():
         session["user"] = user_data.get("login")
         return redirect(url_for("admin_panel"))
-    return "Truy cập bị từ chối!", 403
+    return "Truy cập bị từ chối! Tài khoản GitHub không được phép quản trị.", 403
 
 
 @app.route("/logout", methods=["GET", "POST"])
