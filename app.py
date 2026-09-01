@@ -46,11 +46,10 @@ GITHUB_CLIENT_ID = "Ov23liD2PKCxgNkZfUj5"
 GITHUB_CLIENT_SECRET = "158a74d6beed0ed201ad9a7c4a041738d3185eb6"
 YOUR_GITHUB_USERNAME = "PinyinCode"
 
-# Link file firmware .bin của bạn trên Render Static Site
 DEFAULT_FIRMWARE_URL = "https://esp32-linkdownload.onrender.com/xiaozhi.bin"
 DEFAULT_LATEST_VERSION = "v1.1.0"
 
-# --- CẤU HÌNH GỬI EMAIL (SMTP) LẤY TỪ BIẾN MÔI TRƯỜNG ---
+# --- CẤU HÌNH GỬI EMAIL (SMTP) ---
 SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
 SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "")
@@ -85,7 +84,6 @@ def send_otp_email(to_email, otp_code):
         return False
 
 
-# --- HÀM THAO TÁC CSDL AN TOÀN ---
 def load_db():
     devices = {}
     try:
@@ -95,6 +93,7 @@ def load_db():
                 if mac:
                     devices[mac] = {
                         "username": doc.get("username", ""),
+                        "chip_id": doc.get("chip_id", ""),
                         "email": doc.get("email", ""),
                         "status": doc.get("status", "active"),
                         "expires_at": doc.get("expires_at", ""),
@@ -114,6 +113,7 @@ def get_device(mac):
             if doc:
                 return {
                     "username": doc.get("username", ""),
+                    "chip_id": doc.get("chip_id", ""),
                     "email": doc.get("email", ""),
                     "status": doc.get("status", "active"),
                     "expires_at": doc.get("expires_at", ""),
@@ -179,14 +179,14 @@ ADMIN_HTML = """
     <title>Quản lý Bản quyền & OTA ESP32</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; background: #f2f2f7; color: #1c1c1e; }
-        .container { max-width: 1150px; margin: auto; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+        .container { max-width: 1250px; margin: auto; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
         .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
         h2 { color: #007aff; margin: 0; font-size: 20px; }
         .nav-links { display: flex; gap: 10px; align-items: center; }
         .portal-btn { background: #5856d6; color: white; padding: 8px 14px; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: 600; }
         .logout-btn { background: #ff3b30; color: white; padding: 8px 14px; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: 600; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; overflow-x: auto; display: block; }
-        th, td { padding: 12px 10px; border-bottom: 1px solid #e5e5ea; text-align: left; font-size: 14px; }
+        th, td { padding: 12px 10px; border-bottom: 1px solid #e5e5ea; text-align: left; font-size: 13px; }
         th { background: #fafafc; color: #3a3a3c; font-weight: 600; }
         input, select, button { padding: 8px 10px; margin: 3px 0; border: 1px solid #c7c7cc; border-radius: 8px; font-size: 13px; outline: none; box-sizing: border-box; }
         input:focus { border-color: #007aff; }
@@ -197,8 +197,8 @@ ADMIN_HTML = """
         .delete-btn { background: #ff3b30; padding: 6px 10px; font-size: 12px; border-radius: 8px; color: white; text-decoration: none; display: inline-block; margin-left: 3px; font-weight: 600; }
         .form-group { background: #fafafc; border: 1px solid #e5e5ea; padding: 20px; border-radius: 14px; margin-bottom: 25px; }
         .form-row { display: flex; gap: 15px; flex-wrap: wrap; }
-        .form-col { flex: 1; min-width: 180px; }
-        label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 5px; }
+        .form-col { flex: 1; min-width: 170px; }
+        label { font-size: 12px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 5px; }
     </style>
 </head>
 <body>
@@ -213,20 +213,24 @@ ADMIN_HTML = """
         <hr style="margin: 20px 0; border: 0; border-top: 1px solid #e5e5ea;">
         
         <div class="form-group">
-            <h3 style="margin-top: 0; font-size: 16px; color: #1c1c1e;">Thêm hoặc Cập nhật thiết bị mới</h3>
+            <h3 style="margin-top: 0; font-size: 15px; color: #1c1c1e;">Thêm hoặc Cập nhật thiết bị mới</h3>
             <form action="/admin/add" method="POST">
                 <div class="form-row">
                     <div class="form-col">
                         <label>Địa chỉ MAC:</label>
-                        <input type="text" name="mac" placeholder="Ví dụ: 24:0A:C4:12:34:56" required style="width: 100%;">
+                        <input type="text" name="mac" placeholder="24:0A:C4:..." required style="width: 100%;">
                     </div>
                     <div class="form-col">
-                        <label>Tên quản lý / Username:</label>
-                        <input type="text" name="username" placeholder="Ví dụ: Loa Thu Ngân" style="width: 100%;">
+                        <label>Chip ID:</label>
+                        <input type="text" name="chip_id" placeholder="ESP32S3-..." required style="width: 100%;">
                     </div>
                     <div class="form-col">
-                        <label>Email khách hàng:</label>
-                        <input type="email" name="email" placeholder="example@gmail.com" style="width: 100%;">
+                        <label>Tên thiết bị:</label>
+                        <input type="text" name="username" placeholder="Tên..." style="width: 100%;">
+                    </div>
+                    <div class="form-col">
+                        <label>Email khách:</label>
+                        <input type="email" name="email" placeholder="email@gmail.com" style="width: 100%;">
                     </div>
                     <div class="form-col">
                         <label>Ngày hết hạn:</label>
@@ -238,44 +242,51 @@ ADMIN_HTML = """
             </form>
         </div>
 
-        <h3 style="font-size: 16px; color: #1c1c1e;">Danh sách thiết bị đã lưu</h3>
+        <h3 style="font-size: 15px; color: #1c1c1e;">Danh sách thiết bị đã lưu</h3>
         <table>
             <tr>
                 <th>Địa chỉ MAC</th>
+                <th>Chip ID</th>
                 <th>Tên quản lý</th>
                 <th>Email liên kết</th>
                 <th>Trạng thái</th>
-                <th>Ngày hết hạn</th>
-                <th>Thao tác OTA</th>
-                <th>Thao tác khác</th>
+                <th>Hết hạn</th>
+                <th>OTA</th>
+                <th>Thao tác</th>
             </tr>
             {% for mac, info in devices.items() %}
             <tr>
                 <td><b>{{ mac }}</b></td>
                 <td>
-                    <form action="/admin/update-username/{{ mac }}" method="POST" style="display: flex; gap: 5px; margin: 0;">
-                        <input type="text" name="username" value="{{ info.username }}" placeholder="Tên..." style="flex: 1;">
-                        <button type="submit" style="padding: 6px 10px; font-size: 12px; border-radius: 8px;">Lưu</button>
+                    <form action="/admin/update-chipid/{{ mac }}" method="POST" style="display: flex; gap: 4px; margin: 0;">
+                        <input type="text" name="chip_id" value="{{ info.chip_id }}" placeholder="Chip ID..." style="flex: 1; font-size: 12px;">
+                        <button type="submit" style="padding: 4px 8px; font-size: 11px;">Lưu</button>
                     </form>
                 </td>
                 <td>
-                    <form action="/admin/update-email/{{ mac }}" method="POST" style="display: flex; gap: 5px; margin: 0;">
-                        <input type="email" name="email" value="{{ info.email }}" placeholder="Email..." style="flex: 1;">
-                        <button type="submit" style="padding: 6px 10px; font-size: 12px; border-radius: 8px;">Lưu</button>
+                    <form action="/admin/update-username/{{ mac }}" method="POST" style="display: flex; gap: 4px; margin: 0;">
+                        <input type="text" name="username" value="{{ info.username }}" placeholder="Tên..." style="flex: 1; font-size: 12px;">
+                        <button type="submit" style="padding: 4px 8px; font-size: 11px;">Lưu</button>
+                    </form>
+                </td>
+                <td>
+                    <form action="/admin/update-email/{{ mac }}" method="POST" style="display: flex; gap: 4px; margin: 0;">
+                        <input type="email" name="email" value="{{ info.email }}" placeholder="Email..." style="flex: 1; font-size: 12px;">
+                        <button type="submit" style="padding: 4px 8px; font-size: 11px;">Lưu</button>
                     </form>
                 </td>
                 <td style="color: {{ '#34c759' if info.status == 'active' else '#ff3b30' }}; font-weight: 600;">{{ info.status }}</td>
                 <td>{{ info.expires_at }}</td>
                 <td>
                     {% if info.get('ota_pending', False) %}
-                        <span class="ota-btn ota-active" style="padding: 6px 10px; border-radius: 8px;">Đang chờ...</span>
-                        <a href="/admin/cancel-ota/{{ mac }}" style="font-size:12px; color:#ff3b30; text-decoration: none; margin-left: 5px; font-weight: 600;">Hủy</a>
+                        <span class="ota-btn ota-active" style="padding: 4px 8px; font-size: 11px;">Đang chờ</span>
+                        <a href="/admin/cancel-ota/{{ mac }}" style="font-size:11px; color:#ff3b30; text-decoration: none; margin-left: 3px; font-weight: bold;">Hủy</a>
                     {% else %}
-                        <a href="/admin/trigger-ota/{{ mac }}" class="ota-btn">Cập nhật OTA</a>
+                        <a href="/admin/trigger-ota/{{ mac }}" class="ota-btn" style="padding: 4px 8px; font-size: 11px;">Kích hoạt</a>
                     {% endif %}
                 </td>
                 <td>
-                    <a href="/admin/delete/{{ mac }}" class="delete-btn" onclick="return confirm('Bạn có chắc chắn muốn xóa thiết bị {{ mac }} không?');">Xóa</a>
+                    <a href="/admin/delete/{{ mac }}" class="delete-btn" onclick="return confirm('Xóa thiết bị này?');" style="padding: 4px 8px; font-size: 11px;">Xóa</a>
                 </td>
             </tr>
             {% endfor %}
@@ -323,32 +334,34 @@ USER_PORTAL_HTML = """
         <h2>Cổng Thông Tin Loa Ngân Hàng</h2>
         <p class="subtitle">Xác thực Email OTP để Tra cứu & Cập nhật Firmware</p>
         
-        <!-- BƯỚC 1: NHẬP MAC VÀ EMAIL -->
         <div id="step1">
             <div class="form-group">
-                <label>Nhập Địa chỉ MAC của thiết bị:</label>
+                <label>Địa chỉ MAC:</label>
                 <input type="text" id="macInput" placeholder="Ví dụ: 24:0A:C4:12:34:56">
             </div>
             <div class="form-group">
-                <label>Nhập Email của bạn:</label>
-                <input type="email" id="emailInput" placeholder="Nhập email để nhận OTP hoặc đăng ký...">
+                <label>Chip ID:</label>
+                <input type="text" id="chipIdInput" placeholder="Ví dụ: ESP32S3-12345678">
+            </div>
+            <div class="form-group">
+                <label>Email của bạn:</label>
+                <input type="email" id="emailInput" placeholder="Nhập email đăng ký...">
             </div>
             <button class="btn" id="sendOtpBtn" type="button">Gửi mã xác nhận (OTP)</button>
         </div>
 
-        <!-- BƯỚC 2: NHẬP MÃ OTP 6 SỐ -->
         <div id="step2" style="display: none;">
             <div class="form-group">
-                <label>Nhập mã OTP 6 số đã gửi vào email:</label>
-                <input type="text" id="otpInput" placeholder="Ví dụ: 123456" maxlength="6">
+                <label>Nhập mã OTP 6 số:</label>
+                <input type="text" id="otpInput" placeholder="123456" maxlength="6">
             </div>
             <button class="btn btn-green" id="verifyOtpBtn" type="button">Xác nhận OTP & Tra cứu</button>
-            <button class="btn btn-gray" id="backBtn" type="button">Quay lại / Đổi email</button>
+            <button class="btn btn-gray" id="backBtn" type="button">Quay lại</button>
         </div>
 
-        <!-- KẾT QUẢ HIỂN THỊ SAU KHI XÁC THỰC -->
         <div id="resultCard" class="result-box">
             <div class="result-row"><span>Tên thiết bị:</span> <b id="resName">-</b></div>
+            <div class="result-row"><span>Chip ID:</span> <b id="resChipId">-</b></div>
             <div class="result-row"><span>Trạng thái:</span> <span id="resStatus">-</span></div>
             <div class="result-row"><span>Hết hạn lúc:</span> <b id="resExpiry">-</b></div>
             
@@ -378,10 +391,11 @@ USER_PORTAL_HTML = """
         document.addEventListener("DOMContentLoaded", function() {
             document.getElementById('sendOtpBtn').addEventListener('click', async function() {
                 let mac = document.getElementById('macInput').value.trim();
+                let chipId = document.getElementById('chipIdInput').value.trim();
                 const email = document.getElementById('emailInput').value.trim();
                 
-                if (!mac || !email) {
-                    alert('Vui lòng nhập đầy đủ Địa chỉ MAC và Email!');
+                if (!mac || !chipId || !email) {
+                    alert('Vui lòng nhập đầy đủ MAC, Chip ID và Email!');
                     return;
                 }
 
@@ -395,33 +409,20 @@ USER_PORTAL_HTML = """
                 try {
                     const response = await fetch('/api/user/send-otp', {
                         method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify({ mac: mac, email: email })
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ mac: mac, chip_id: chipId, email: email })
                     });
-
-                    const responseText = await response.text();
-                    let data;
-                    try {
-                        data = JSON.parse(responseText);
-                    } catch (parseErr) {
-                        console.error("Server trả về không phải JSON:", responseText);
-                        alert("Lỗi từ Server: " + responseText.substring(0, 100));
-                        return;
-                    }
+                    const data = await response.json();
 
                     if (response.ok) {
-                        alert("✓ " + (data.message || "Mã OTP đã được gửi đến email của bạn!"));
+                        alert("✓ " + (data.message || "Mã OTP đã được gửi!"));
                         document.getElementById('step1').style.display = 'none';
                         document.getElementById('step2').style.display = 'block';
                     } else {
-                        alert("Lỗi (" + response.status + "): " + (data.error || "Không thể xử lý yêu cầu."));
+                        alert("Lỗi: " + (data.error || "Không thể xử lý yêu cầu."));
                     }
                 } catch (e) {
-                    console.error("Lỗi Fetch chi tiết:", e);
-                    alert("Lỗi kết nối chi tiết: " + e.message);
+                    alert("Lỗi kết nối: " + e.message);
                 } finally {
                     btn.disabled = false;
                     btn.innerText = "Gửi mã xác nhận (OTP)";
@@ -430,10 +431,11 @@ USER_PORTAL_HTML = """
 
             document.getElementById('verifyOtpBtn').addEventListener('click', async function() {
                 let mac = document.getElementById('macInput').value.trim();
+                let chipId = document.getElementById('chipIdInput').value.trim();
                 const otp = document.getElementById('otpInput').value.trim();
                 
                 if (!otp || otp.length !== 6) {
-                    alert('Vui lòng nhập chính xác mã OTP gồm 6 chữ số!');
+                    alert('Vui lòng nhập đúng mã OTP gồm 6 chữ số!');
                     return;
                 }
 
@@ -446,13 +448,14 @@ USER_PORTAL_HTML = """
                     const response = await fetch('/api/user/verify-otp', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ mac: mac, otp: otp })
+                        body: JSON.stringify({ mac: mac, chip_id: chipId, otp: otp })
                     });
                     const data = await response.json();
 
                     if (response.ok) {
                         document.getElementById('step2').style.display = 'none';
                         document.getElementById('resName').innerText = data.username || "Chưa đặt tên";
+                        document.getElementById('resChipId').innerText = data.chip_id || chipId;
                         
                         const statusEl = document.getElementById('resStatus');
                         if (data.status === 'active') {
@@ -465,18 +468,15 @@ USER_PORTAL_HTML = """
                             document.getElementById('updateBtn').style.display = "none";
                         }
 
-                        const expiryDate = new Date(data.expires_at);
-                        document.getElementById('resExpiry').innerText = expiryDate.toLocaleString('vi-VN');
-                        
+                        document.getElementById('resExpiry').innerText = new Date(data.expires_at).toLocaleString('vi-VN');
                         document.getElementById('resWebhook').value = data.webhook_url || "";
                         document.getElementById('resSecret').value = data.sepay_secret || "";
-
                         document.getElementById('resultCard').style.display = "block";
                     } else {
                         alert("Lỗi: " + (data.error || "Xác thực OTP thất bại."));
                     }
                 } catch (e) {
-                    alert("Lỗi kết nối đến máy chủ: " + e.message);
+                    alert("Lỗi kết nối: " + e.message);
                 } finally {
                     btn.disabled = false;
                     btn.innerText = "Xác nhận OTP & Tra cứu";
@@ -490,8 +490,9 @@ USER_PORTAL_HTML = """
 
             document.getElementById('updateBtn').addEventListener('click', async function() {
                 let mac = document.getElementById('macInput').value.trim();
+                let chipId = document.getElementById('chipIdInput').value.trim();
                 const email = document.getElementById('emailInput').value.trim();
-                if (!mac || !email) return;
+                if (!mac || !chipId || !email) return;
 
                 mac = mac.toUpperCase().replace(/-/g, ':');
 
@@ -499,11 +500,11 @@ USER_PORTAL_HTML = """
                     const response = await fetch('/api/user/request-ota', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ mac: mac, email: email })
+                        body: JSON.stringify({ mac: mac, chip_id: chipId, email: email })
                     });
                     const data = await response.json();
                     if (response.ok) {
-                        alert("✓ Đã gửi lệnh yêu cầu cập nhật thành công!");
+                        alert("✓ Đã kích hoạt chế độ cập nhật OTA thành công!");
                     } else {
                         alert("Lỗi: " + (data.error || "Không thể kích hoạt cập nhật."));
                     }
@@ -541,10 +542,7 @@ def login():
 
 @app.route("/login/authorize")
 def login_authorize():
-    github_auth_url = (
-        f"https://github.com/login/oauth/authorize?client_id={GITHUB_CLIENT_ID}"
-    )
-    return redirect(github_auth_url)
+    return redirect(f"https://github.com/login/oauth/authorize?client_id={GITHUB_CLIENT_ID}")
 
 
 @app.route("/login/callback")
@@ -553,41 +551,25 @@ def callback():
     if not code:
         return "Đăng nhập thất bại từ GitHub!", 400
 
-    token_url = "https://github.com/login/oauth/access_token"
-    headers = {"Accept": "application/json"}
-    data = {
-        "client_id": GITHUB_CLIENT_ID,
-        "client_secret": GITHUB_CLIENT_SECRET,
-        "code": code,
-    }
-    response = requests.post(token_url, json=data, headers=headers)
-    token_json = response.json()
-    access_token = token_json.get("access_token")
+    token_json = requests.post(
+        "https://github.com/login/oauth/access_token",
+        json={"client_id": GITHUB_CLIENT_ID, "client_secret": GITHUB_CLIENT_SECRET, "code": code},
+        headers={"Accept": "application/json"},
+    ).json()
 
+    access_token = token_json.get("access_token")
     if not access_token:
         return "Không thể lấy Token xác thực từ GitHub!", 400
 
-    user_url = "https://api.github.com/user"
-    user_headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Accept": "application/json",
-    }
-    user_response = requests.get(user_url, headers=user_headers)
-    user_data = user_response.json()
-    github_username = user_data.get("login")
+    user_data = requests.get(
+        "https://api.github.com/user",
+        headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+    ).json()
 
-    if (
-        github_username
-        and github_username.lower() == YOUR_GITHUB_USERNAME.lower()
-    ):
-        session["user"] = github_username
+    if user_data.get("login", "").lower() == YOUR_GITHUB_USERNAME.lower():
+        session["user"] = user_data.get("login")
         return redirect(url_for("admin_panel"))
-    else:
-        return (
-            f"Truy cập bị từ chối! Tài khoản GitHub ({github_username})"
-            " không có quyền quản trị hệ thống này.",
-            403,
-        )
+    return "Truy cập bị từ chối!", 403
 
 
 @app.route("/logout", methods=["GET", "POST"])
@@ -600,11 +582,7 @@ def logout():
 def admin_panel():
     if "user" not in session:
         return redirect(url_for("login"))
-
-    devices = load_db()
-    return render_template_string(
-        ADMIN_HTML, devices=devices, user=session["user"]
-    )
+    return render_template_string(ADMIN_HTML, devices=load_db(), user=session["user"])
 
 
 @app.route("/admin/add", methods=["POST"])
@@ -613,6 +591,7 @@ def admin_add():
         return redirect(url_for("login"))
 
     mac = request.form.get("mac")
+    chip_id = request.form.get("chip_id", "").strip()
     username = request.form.get("username", "").strip()
     email = request.form.get("email", "").strip().lower()
     expiry_date_str = request.form.get("expiry_date")
@@ -620,28 +599,21 @@ def admin_add():
     if mac and expiry_date_str:
         mac = mac.strip().upper().replace("-", ":")
         try:
-            expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(
-                hour=23, minute=59, second=59
-            )
+            expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
             device = get_device(mac)
-
-            sepay_secret = (
-                device.get("sepay_secret")
-                if device
-                else f"whsec_{uuid.uuid4().hex}"
-            )
+            sepay_secret = device.get("sepay_secret") if device else f"whsec_{uuid.uuid4().hex}"
 
             if device:
                 device["expires_at"] = expiry_date.isoformat()
-                if username:
-                    device["username"] = username
-                if email:
-                    device["email"] = email
+                if username: device["username"] = username
+                if chip_id: device["chip_id"] = chip_id
+                if email: device["email"] = email
                 device["status"] = "active"
                 device["sepay_secret"] = sepay_secret
             else:
                 device = {
                     "username": username,
+                    "chip_id": chip_id,
                     "email": email,
                     "status": "active",
                     "expires_at": expiry_date.isoformat(),
@@ -658,19 +630,29 @@ def admin_add():
     return redirect(url_for("admin_panel"))
 
 
+@app.route("/admin/update-chipid/<path:mac>", methods=["POST"])
+def update_chipid(mac):
+    if "user" not in session:
+        return redirect(url_for("login"))
+    mac = mac.strip().upper().replace("-", ":")
+    chip_id = request.form.get("chip_id", "").strip()
+    device = get_device(mac)
+    if device:
+        device["chip_id"] = chip_id
+        save_device(mac, device)
+    return redirect(url_for("admin_panel"))
+
+
 @app.route("/admin/update-username/<path:mac>", methods=["POST"])
 def update_username(mac):
     if "user" not in session:
         return redirect(url_for("login"))
-
     mac = mac.strip().upper().replace("-", ":")
     username = request.form.get("username", "").strip()
-
     device = get_device(mac)
     if device:
         device["username"] = username
         save_device(mac, device)
-
     return redirect(url_for("admin_panel"))
 
 
@@ -678,15 +660,12 @@ def update_username(mac):
 def update_email(mac):
     if "user" not in session:
         return redirect(url_for("login"))
-
     mac = mac.strip().upper().replace("-", ":")
     email = request.form.get("email", "").strip().lower()
-
     device = get_device(mac)
     if device:
         device["email"] = email
         save_device(mac, device)
-
     return redirect(url_for("admin_panel"))
 
 
@@ -694,13 +673,11 @@ def update_email(mac):
 def trigger_ota(mac):
     if "user" not in session:
         return redirect(url_for("login"))
-
     mac = mac.strip().upper().replace("-", ":")
     device = get_device(mac)
     if device:
         device["ota_pending"] = True
         save_device(mac, device)
-
     return redirect(url_for("admin_panel"))
 
 
@@ -708,13 +685,11 @@ def trigger_ota(mac):
 def cancel_ota(mac):
     if "user" not in session:
         return redirect(url_for("login"))
-
     mac = mac.strip().upper().replace("-", ":")
     device = get_device(mac)
     if device:
         device["ota_pending"] = False
         save_device(mac, device)
-
     return redirect(url_for("admin_panel"))
 
 
@@ -722,14 +697,12 @@ def cancel_ota(mac):
 def admin_delete(mac):
     if "user" not in session:
         return redirect(url_for("login"))
-
     mac = mac.strip().upper().replace("-", ":")
     try:
         if devices_collection is not None:
             devices_collection.delete_one({"_id": mac})
     except Exception as e:
         print(f"Lỗi khi xóa thiết bị {mac}: {e}")
-
     return redirect(url_for("admin_panel"))
 
 
@@ -743,23 +716,30 @@ def device_portal():
 def user_send_otp():
     data = request.get_json() or {}
     mac_address = data.get("mac")
+    chip_id = data.get("chip_id", "").strip()
     client_email = data.get("email", "").strip().lower()
 
-    if not mac_address or not client_email:
-        return jsonify({"error": "Vui lòng nhập đầy đủ MAC và Email"}), 400
+    if not mac_address or not chip_id or not client_email:
+        return jsonify({"error": "Vui lòng nhập đầy đủ MAC, Chip ID và Email"}), 400
 
     mac_address = mac_address.strip().upper().replace("-", ":")
     device_info = get_device(mac_address)
 
     if not device_info:
-        return jsonify({"error": "Địa chỉ MAC này chưa tồn tại trên hệ thống. Vui lòng liên hệ quản trị viên."}), 404
+        return jsonify({"error": "Địa chỉ MAC chưa tồn tại trên hệ thống. Vui lòng liên hệ quản trị viên."}), 404
+
+    # KHỚP CẢ CHIP ID
+    server_chip_id = device_info.get("chip_id", "").strip()
+    if server_chip_id and server_chip_id != chip_id:
+        return jsonify({"error": "Mã Chip ID không khớp với thiết bị trên hệ thống!"}), 403
 
     stored_email = device_info.get("email", "").strip().lower()
-    
     if not stored_email:
         device_info["email"] = client_email
+        if not device_info.get("chip_id"):
+            device_info["chip_id"] = chip_id
         save_device(mac_address, device_info)
-        success_msg = "Đã đăng ký email thành công và gửi mã OTP xác nhận!"
+        success_msg = "Đã đăng ký thông tin thành công và gửi mã OTP!"
     else:
         if stored_email != client_email:
             return jsonify({"error": "Email không khớp với dữ liệu đăng ký của thiết bị này!"}), 403
@@ -775,13 +755,14 @@ def user_send_otp():
     if send_otp_email(client_email, otp_code):
         return jsonify({"success": True, "message": success_msg})
     else:
-        return jsonify({"error": "Không thể gửi email. Vui lòng kiểm tra lại cấu hình SMTP."}), 500
+        return jsonify({"error": "Không thể gửi email. Kiểm tra lại cấu hình SMTP."}), 500
 
 
 @app.route("/api/user/verify-otp", methods=["POST"])
 def user_verify_otp():
     data = request.get_json() or {}
     mac_address = data.get("mac")
+    chip_id = data.get("chip_id", "").strip()
     client_otp = data.get("otp", "").strip()
 
     if not mac_address or not client_otp:
@@ -792,6 +773,11 @@ def user_verify_otp():
 
     if not device_info:
         return jsonify({"error": "Thiết bị không tồn tại"}), 404
+
+    if chip_id:
+        server_chip_id = device_info.get("chip_id", "").strip()
+        if server_chip_id and server_chip_id != chip_id:
+            return jsonify({"error": "Chip ID không khớp!"}), 403
 
     stored_otp = device_info.get("otp", "")
     otp_expires_str = device_info.get("otp_expires_at", "")
@@ -827,6 +813,7 @@ def user_verify_otp():
         {
             "success": True,
             "mac": mac_address,
+            "chip_id": device_info.get("chip_id", ""),
             "username": device_info.get("username", ""),
             "status": status,
             "expires_at": device_info["expires_at"],
@@ -840,10 +827,11 @@ def user_verify_otp():
 def user_request_ota():
     data = request.get_json() or {}
     mac_address = data.get("mac")
+    chip_id = data.get("chip_id", "").strip()
     client_email = data.get("email", "").strip().lower()
 
-    if not mac_address or not client_email:
-        return jsonify({"error": "Thiếu thông tin MAC hoặc Email"}), 400
+    if not mac_address or not chip_id or not client_email:
+        return jsonify({"error": "Thiếu thông tin MAC, Chip ID hoặc Email"}), 400
 
     mac_address = mac_address.strip().upper().replace("-", ":")
     device_info = get_device(mac_address)
@@ -851,14 +839,19 @@ def user_request_ota():
     if not device_info:
         return jsonify({"error": "Thiết bị không tồn tại"}), 404
 
+    # Khớp bảo mật Chip ID và Email
+    server_chip_id = device_info.get("chip_id", "").strip()
+    if server_chip_id and server_chip_id != chip_id:
+        return jsonify({"error": "Chip ID không khớp, từ chối cập nhật!"}), 403
+
     stored_email = device_info.get("email", "").strip().lower()
     if not stored_email or stored_email != client_email:
-        return jsonify({"error": "Xác thực email thất bại, không có quyền cập nhật!"}), 403
+        return jsonify({"error": "Xác thực email thất bại!"}), 403
 
     now = datetime.utcnow()
     expiry_time = datetime.fromisoformat(device_info["expires_at"])
     if now > expiry_time:
-        return jsonify({"error": "Bản quyền thiết bị đã hết hạn, không thể cập nhật!"}), 403
+        return jsonify({"error": "Bản quyền thiết bị đã hết hạn!"}), 403
 
     device_info["ota_pending"] = True
     save_device(mac_address, device_info)
@@ -870,6 +863,8 @@ def user_request_ota():
 @app.route("/api/check-license", methods=["GET"])
 def check_license():
     mac_address = request.args.get("mac")
+    chip_id = request.args.get("chip_id", "").strip()
+
     if not mac_address:
         return jsonify({"error": "Missing mac address parameter", "status": "error"}), 400
 
@@ -881,6 +876,7 @@ def check_license():
         expiry_date = now + timedelta(days=30)
         device_info = {
             "username": "",
+            "chip_id": chip_id,
             "email": "",
             "status": "active",
             "expires_at": expiry_date.isoformat(),
@@ -891,6 +887,11 @@ def check_license():
             "notifications": [],
         }
         save_device(mac_address, device_info)
+    else:
+        # Nếu thiết bị chưa có chip_id trên server thì tự động lưu lại
+        if chip_id and not device_info.get("chip_id"):
+            device_info["chip_id"] = chip_id
+            save_device(mac_address, device_info)
 
     expiry_time = datetime.fromisoformat(device_info["expires_at"])
 
@@ -920,14 +921,21 @@ def check_license():
 @app.route("/api/check-update", methods=["GET"])
 def check_update():
     mac_address = request.args.get("mac")
-    if not mac_address:
-        return jsonify({"update_available": False, "error": "Missing MAC"}), 400
+    chip_id = request.args.get("chip_id", "").strip()
+
+    if not mac_address or not chip_id:
+        return jsonify({"update_available": False, "error": "Missing MAC or Chip ID"}), 400
 
     mac_address = mac_address.upper().replace("-", ":")
     device_info = get_device(mac_address)
 
     if not device_info:
         return jsonify({"update_available": False, "message": "Device not registered."})
+
+    # BẮT BUỘC KHỚP CHIP ID ĐỂ BẢO MẬT OTA
+    server_chip_id = device_info.get("chip_id", "").strip()
+    if server_chip_id and server_chip_id != chip_id:
+        return jsonify({"update_available": False, "message": "Chip ID mismatch. Update denied."})
 
     now = datetime.utcnow()
     try:
