@@ -285,7 +285,7 @@ ADMIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRA CỨU CHO USER (HỖ TRỢ ĐĂNG KÝ EMAIL MỚI NẾU CHƯA CÓ) ---
+# --- GIAO DIỆN TRA CỨU CHO USER ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -390,7 +390,7 @@ USER_PORTAL_HTML = """
 
                 const btn = this;
                 btn.disabled = true;
-                btn.innerText = "Đang xử lý (Server đang khởi động, chờ chút)...";
+                btn.innerText = "Đang gửi mã OTP...";
 
                 try {
                     const response = await fetch('/api/user/send-otp', {
@@ -408,7 +408,7 @@ USER_PORTAL_HTML = """
                         alert("Lỗi: " + (data.error || "Không thể gửi OTP."));
                     }
                 } catch (e) {
-                    alert("Lỗi kết nối máy chủ: Server có thể đang khởi động lại, vui lòng thử lại sau giây lát!");
+                    alert("Lỗi kết nối đến máy chủ.");
                 } finally {
                     btn.disabled = false;
                     btn.innerText = "Gửi mã xác nhận (OTP)";
@@ -744,17 +744,18 @@ def user_send_otp():
 
     stored_email = device_info.get("email", "").strip().lower()
     
-    # KỊCH BẢN: Nếu thiết bị đã có MAC nhưng chưa có email -> Tự động cập nhật email mới do người dùng nhập
+    # Nếu thiết bị chưa có email thì lưu mới
     if not stored_email:
         device_info["email"] = client_email
         save_device(mac_address, device_info)
-        stored_email = client_email
         success_msg = "Đã đăng ký email thành công và gửi mã OTP xác nhận!"
     else:
+        # Nếu đã có email nhưng nhập sai, chặn ngay lập tức, KHÔNG tạo OTP và KHÔNG lưu đè gì cả
         if stored_email != client_email:
             return jsonify({"error": "Email không khớp với dữ liệu đăng ký của thiết bị này!"}), 403
         success_msg = "Đã gửi mã OTP đến email của bạn."
 
+    # Chỉ tạo OTP khi email đã hoàn toàn hợp lệ
     otp_code = f"{random.randint(100000, 999999)}"
     expiry_time = datetime.utcnow() + timedelta(minutes=5)
 
