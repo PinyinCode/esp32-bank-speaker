@@ -75,7 +75,6 @@ def save_device(mac, data):
 
 
 def load_db():
-    """Hàm tải toàn bộ danh sách thiết bị từ MongoDB phục vụ hiển thị trên Admin Panel"""
     devices_dict = {}
     try:
         if devices_collection is not None:
@@ -429,7 +428,6 @@ def login():
 
 @app.route("/login/authorize")
 def login_authorize():
-    # Thêm redirect_uri tương ứng nếu cần thiết lập chính xác trên GitHub OAuth App
     return redirect(f"https://github.com/login/oauth/authorize?client_id={GITHUB_CLIENT_ID}")
 
 
@@ -731,8 +729,8 @@ def check_update():
     mac_address = request.args.get("mac")
     chip_id = request.args.get("chip_id", "").strip()
 
-    if not mac_address or not chip_id:
-        return jsonify({"update_available": False, "error": "Missing MAC or Chip ID"}), 400
+    if not mac_address:
+        return jsonify({"update_available": False, "error": "Missing MAC address"}), 400
 
     mac_address = mac_address.upper().replace("-", ":")
     device_info = get_device(mac_address)
@@ -740,8 +738,9 @@ def check_update():
     if not device_info:
         return jsonify({"update_available": False, "message": "Device not registered."})
 
+    # Chỉ so sánh chip_id nếu database có lưu và request có gửi lên
     server_chip_id = device_info.get("chip_id", "").strip()
-    if server_chip_id and server_chip_id != chip_id:
+    if server_chip_id and chip_id and server_chip_id != chip_id:
         return jsonify({"update_available": False, "message": "Chip ID mismatch. Update denied."})
 
     now = datetime.utcnow()
