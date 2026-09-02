@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bảng Điều Khiển Quản Trị - ESP32 OTA</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; 
+            background: #f5f5f7; 
+            color: #1d1d1f; 
+        }
+        .container { max-width: 1350px; margin: 40px auto; background: white; padding: 36px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.04); }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; }
+        .brand { display: flex; align-items: center; gap: 14px; }
+        .brand-icon { width: 44px; height: 44px; background: #007aff; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; font-weight: bold; }
+        h2 { color: #1d1d1f; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+        .nav-links { display: flex; gap: 12px; align-items: center; }
+        .btn-base { padding: 10px 18px; text-decoration: none; border-radius: 12px; font-size: 14px; font-weight: 600; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        .portal-btn { background: #f0f0f5; color: #1d1d1f; }
+        .portal-btn:hover { background: #e5e5ea; }
+        .logout-btn { background: #fff1f0; color: #ff3b30; }
+        .logout-btn:hover { background: #ffe1e0; }
+        
+        .form-group { background: #fafafc; border: 1px solid #eaeaf0; padding: 28px; border-radius: 20px; margin: 30px 0; }
+        .form-group h3 { margin-top: 0; font-size: 16px; color: #1d1d1f; font-weight: 600; margin-bottom: 20px; }
+        .form-row { display: flex; gap: 20px; flex-wrap: wrap; }
+        .form-col { flex: 1; min-width: 240px; }
+        label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 8px; }
+        input, select { width: 100%; padding: 12px 14px; border: 1px solid #d2d2d7; border-radius: 12px; font-size: 14px; outline: none; background: #fff; transition: border-color 0.2s, box-shadow 0.2s; }
+        input:focus { border-color: #007aff; box-shadow: 0 0 0 4px rgba(0,122,255,0.1); }
+        
+        .submit-btn { background: #007aff; color: white; border: none; cursor: pointer; font-weight: 600; padding: 12px 24px; border-radius: 12px; font-size: 14px; transition: background 0.2s; box-shadow: 0 4px 12px rgba(0,122,255,0.2); }
+        .submit-btn:hover { background: #005ec4; }
+
+        .table-container { width: 100%; overflow-x: auto; margin-top: 15px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: 16px 14px; border-bottom: 1px solid #f0f0f5; font-size: 14px; vertical-align: middle; }
+        th { background: #fbfbfd; color: #86868b; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        tr:hover td { background: #fafafc; }
+        
+        .badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-block; }
+        .badge-active { background: #e3fcef; color: #00875a; }
+        .badge-expired { background: #ffebe6; color: #de350b; }
+        
+        .action-btn { padding: 6px 12px; font-size: 12px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block; transition: all 0.2s; }
+        .ota-pending { background: #fff8e1; color: #b78103; border: 1px solid #ffe082; }
+        .ota-trigger { background: #e1f5fe; color: #0288d1; }
+        .ota-trigger:hover { background: #b3e5fc; }
+        .delete-btn { background: #fff5f5; color: #e53935; }
+        .delete-btn:hover { background: #ffebee; }
+        
+        .inline-edit { display: flex; gap: 6px; align-items: center; }
+        .inline-edit input { padding: 7px 10px; font-size: 13px; }
+        .inline-edit button { padding: 7px 12px; font-size: 12px; background: #34c759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
+        .inline-edit button:hover { background: #28a745; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="brand">
+                <div class="brand-icon">⚡</div>
+                <h2>Hệ Thống Quản Lý Bản Quyền & OTA ESP32</h2>
+            </div>
+            <div class="nav-links">
+                <a href="/device-portal" class="btn-base portal-btn" target="_blank">🌐 Cổng Tra Cứu (User)</a>
+                <a href="/logout" class="btn-base logout-btn">🚪 Đăng xuất ({{ user }})</a>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <h3>➕ Thêm hoặc Cập nhật thiết bị mới</h3>
+            <form action="/admin/add" method="POST">
+                <div class="form-row">
+                    <div class="form-col">
+                        <label>Chip ID phần cứng:</label>
+                        <input type="text" name="chip_id" placeholder="Ví dụ: ESP32_A1B2C3" required>
+                    </div>
+                    <div class="form-col">
+                        <label>Tên khách hàng / Thiết bị (Tối đa 20 ký tự):</label>
+                        <input type="text" name="username" maxlength="20" placeholder="Nhập tên quản lý...">
+                    </div>
+                    <div class="form-col">
+                        <label>Ngày hết hạn bản quyền:</label>
+                        <input type="date" name="expiry_date" required>
+                    </div>
+                </div>
+                <div style="margin-top: 20px;">
+                    <button type="submit" class="submit-btn">Lưu / Cập nhật thiết bị</button>
+                </div>
+            </form>
+        </div>
+
+        <h3 style="font-size: 18px; color: #1d1d1f; margin-top: 40px; font-weight: 600;">📋 Danh sách thiết bị đã đăng ký</h3>
+        <div class="table-container">
+            <table>
+                <tr>
+                    <th>Chip ID</th>
+                    <th>Tên Quản Lý (Tối đa 20 ký tự)</th>
+                    <th>Trạng Thái</th>
+                    <th>Ngày Hết Hạn</th>
+                    <th>Trạng Thái OTA</th>
+                    <th>Thao Tác</th>
+                </tr>
+                {% for chip_id, info in devices.items() %}
+                <tr>
+                    <td><code style="background: #f0f0f5; padding: 4px 8px; border-radius: 6px; font-weight: 600;">{{ chip_id }}</code></td>
+                    <td>
+                        <form action="/admin/update-username/{{ chip_id }}" method="POST" class="inline-edit">
+                            <input type="text" name="username" maxlength="20" value="{{ info.username }}" placeholder="Tên..." style="width: 220px;">
+                            <button type="submit">Lưu</button>
+                        </form>
+                    </td>
+                    <td>
+                        <span id="status-badge-{{ chip_id }}" class="badge {% if info.status == 'active' %}badge-active{% else %}badge-expired{% endif %}">
+                            {% if info.status == 'active' %}Hoạt động{% else %}Hết hạn{% endif %}
+                        </span>
+                    </td>
+                    <td>
+                        <form action="/admin/update-expiry/{{ chip_id }}" method="POST" class="inline-edit">
+                            <input type="date" name="expiry_date" id="expiry-input-{{ chip_id }}" value="{{ info.expires_at[:10] if info.expires_at else '' }}" required style="width: 140px;" onchange="checkExpiryOnTheFly('{{ chip_id }}')">
+                            <button type="submit">Sửa</button>
+                        </form>
+                    </td>
+                    <td>
+                        {% if info.get('ota_pending', False) %}
+                            <span class="action-btn ota-pending">⏳ Đang chờ OTA</span>
+                            <a href="/admin/cancel-ota/{{ chip_id }}" style="font-size: 12px; color: #ff3b30; text-decoration: none; margin-left: 6px; font-weight: 600;">Hủy</a>
+                        {% else %}
+                            <a href="/admin/trigger-ota/{{ chip_id }}" class="action-btn ota-trigger">🚀 Kích hoạt OTA</a>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/admin/delete/{{ chip_id }}" class="action-btn delete-btn" onclick="return confirm('Bạn có chắc chắn muốn xóa thiết bị này không?');">🗑️ Xóa</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+    <script>
+        function checkExpiryOnTheFly(chipId) {
+            const inputEl = document.getElementById('expiry-input-' + chipId);
+            const badgeEl = document.getElementById('status-badge-' + chipId);
+            if (!inputEl || !badgeEl) return;
+
+            const selectedDateVal = inputEl.value;
+            if (!selectedDateVal) return;
+
+            const expiryDate = new Date(selectedDateVal + 'T23:59:59');
+            const now = new Date();
+
+            if (now <= expiryDate) {
+                badgeEl.className = 'badge badge-active';
+                badgeEl.innerText = 'Hoạt động';
+            } else {
+                badgeEl.className = 'badge badge-expired';
+                badgeEl.innerText = 'Hết hạn';
+            }
+        }
+    </script>
+</body>
+</html>
