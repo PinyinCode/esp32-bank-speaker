@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cổng Cấu Hình SePay & Firmware ESP32</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
+            color: #1d1d1f; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            margin: 0; 
+            padding: 20px;
+        }
+        .card { 
+            background: rgba(255, 255, 255, 0.95); 
+            backdrop-filter: blur(20px);
+            width: 100%; 
+            max-width: 480px; 
+            padding: 40px 32px; 
+            border-radius: 28px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.08); 
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .icon-box {
+            width: 56px; height: 56px; background: linear-gradient(135deg, #34c759, #28a745);
+            border-radius: 16px; display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 20px auto; color: white; font-size: 24px; box-shadow: 0 8px 16px rgba(52,199,89,0.3);
+        }
+        h2 { font-size: 22px; margin-bottom: 6px; color: #1d1d1f; font-weight: 700; text-align: center; letter-spacing: -0.5px; }
+        p.subtitle { font-size: 14px; color: #86868b; margin-bottom: 28px; text-align: center; }
+        
+        .form-group { margin-bottom: 20px; text-align: left; }
+        label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 8px; }
+        input { width: 100%; padding: 14px; border: 1px solid #d2d2d7; border-radius: 14px; font-size: 14px; outline: none; background: #fff; transition: all 0.2s; }
+        input:focus { border-color: #007aff; box-shadow: 0 0 0 4px rgba(0,122,255,0.1); }
+        
+        .btn { width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 14px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 6px 16px rgba(0,122,255,0.25); }
+        .btn:hover { background: #005ec4; transform: translateY(-1px); }
+        .btn:disabled { background: #b0c4de; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-green { background: #34c759; box-shadow: 0 6px 16px rgba(52,199,89,0.25); margin-top: 15px; }
+        .btn-green:hover { background: #28a745; }
+        
+        .result-box { margin-top: 24px; background: #fafafc; border: 1px solid #eaeaf0; border-radius: 20px; padding: 24px; text-align: left; font-size: 14px; display: none; }
+        .result-row { margin: 12px 0; display: flex; justify-content: space-between; align-items: center; }
+        .result-row span { color: #86868b; }
+        .result-row b { color: #1d1d1f; }
+        
+        .status-active { color: #00875a; background: #e3fcef; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 12px; }
+        .status-expired { color: #de350b; background: #ffebe6; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 12px; }
+        
+        .copy-row { display: flex; gap: 8px; margin-top: 6px; width: 100%; }
+        .copy-btn { padding: 0 16px; background: #e5e5ea; border: none; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; color: #1d1d1f; transition: background 0.2s; }
+        .copy-btn:hover { background: #d1d1d6; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon-box">🔍</div>
+        <h2>Tra Cứu Thiết Bị</h2>
+        <p class="subtitle">Nhập Chip ID để kiểm tra bản quyền và cấu hình SePay Webhook</p>
+        
+        <div id="searchSection">
+            <div class="form-group">
+                <label>Mã Chip ID phần cứng:</label>
+                <input type="text" id="chipIdInput" placeholder="Ví dụ: ESP32_A1B2C3...">
+            </div>
+            <button class="btn" id="searchBtn" type="button">Tra cứu thông tin</button>
+        </div>
+
+        <div id="resultCard" class="result-box">
+            <div class="result-row"><span>Tên thiết bị:</span> <b id="resName">-</b></div>
+            <div class="result-row"><span>Chip ID:</span> <b id="resChipId">-</b></div>
+            <div class="result-row"><span>Trạng thái:</span> <span id="resStatus">-</span></div>
+            <div class="result-row"><span>Hết hạn lúc:</span> <b id="resExpiry">-</b></div>
+            
+            <hr style="border: 0; border-top: 1px solid #eaeaf0; margin: 18px 0;">
+
+            <div style="margin-top: 10px;">
+                <label>SePay Webhook URL:</label>
+                <div class="copy-row">
+                    <input type="text" id="resWebhook" readonly>
+                    <button class="copy-btn" type="button" onclick="copyText('resWebhook')">Sao chép</button>
+                </div>
+            </div>
+
+            <div style="margin-top: 14px;">
+                <label>SePay Secret Key:</label>
+                <div class="copy-row">
+                    <input type="text" id="resSecret" readonly>
+                    <button class="copy-btn" type="button" onclick="copyText('resSecret')">Sao chép</button>
+                </div>
+            </div>
+            
+            <button id="updateBtn" class="btn btn-green" style="display:none;" type="button">🚀 Yêu cầu Cập nhật Firmware OTA</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            document.getElementById('searchBtn').addEventListener('click', async function() {
+                let chipId = document.getElementById('chipIdInput').value.trim();
+                
+                if (!chipId) {
+                    alert('Vui lòng nhập Chip ID!');
+                    return;
+                }
+
+                const btn = this;
+                btn.disabled = true;
+                btn.innerText = "Đang tra cứu...";
+
+                try {
+                    const response = await fetch('/api/user/lookup', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chip_id: chipId })
+                    });
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        document.getElementById('resName').innerText = data.username || "Chưa đặt tên";
+                        document.getElementById('resChipId').innerText = data.chip_id || chipId;
+                        
+                        const statusEl = document.getElementById('resStatus');
+                        if (data.status === 'active') {
+                            statusEl.innerText = "Hoạt động";
+                            statusEl.className = "status-active";
+                            document.getElementById('updateBtn').style.display = "block";
+                        } else {
+                            statusEl.innerText = "Đã hết hạn";
+                            statusEl.className = "status-expired";
+                            document.getElementById('updateBtn').style.display = "none";
+                        }
+
+                        document.getElementById('resExpiry').innerText = new Date(data.expires_at).toLocaleString('vi-VN');
+                        document.getElementById('resWebhook').value = data.webhook_url || "";
+                        document.getElementById('resSecret').value = data.sepay_secret || "";
+                        document.getElementById('resultCard').style.display = "block";
+                    } else {
+                        alert("Lỗi: " + (data.error || "Không tìm thấy thiết bị hoặc sai thông tin."));
+                    }
+                } catch (e) {
+                    alert("Lỗi kết nối: " + e.message);
+                } finally {
+                    btn.disabled = false;
+                    btn.innerText = "Tra cứu thông tin";
+                }
+            });
+
+            document.getElementById('updateBtn').addEventListener('click', async function() {
+                let chipId = document.getElementById('chipIdInput').value.trim();
+                if (!chipId) return;
+
+                try {
+                    const response = await fetch('/api/user/request-ota', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chip_id: chipId })
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                        alert("✓ Đã kích hoạt chế độ cập nhật OTA thành công!");
+                    } else {
+                        alert("Lỗi: " + (data.error || "Không thể kích hoạt cập nhật."));
+                    }
+                } catch (e) {
+                    alert("Lỗi kết nối khi gửi yêu cầu OTA.");
+                }
+            });
+        });
+
+        function copyText(elementId) {
+            const copyText = document.getElementById(elementId);
+            copyText.select();
+            copyText.setSelectionRange(0, 9999);
+            navigator.clipboard.writeText(copyText.value);
+            alert("Đã sao chép vào bộ nhớ tạm!");
+        }
+    </script>
+</body>
+</html>
