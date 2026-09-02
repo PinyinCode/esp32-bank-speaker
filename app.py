@@ -303,7 +303,7 @@ ADMIN_HTML = """
                                 <input type="text" name="username" value="{{ info.username }}" placeholder="Tên..." style="max-width: 150px;">
                                 <button type="submit">Lưu</button>
                             </form>
-                            <button type="button" class="view-name-btn" onclick="alert('Tên quản lý đầy đủ cho chip {{ chip_id }}:\\n\\n{{ info.username if info.username else \\'Chưa đặt tên\\' }}')">🔍 Xem</button>
+                            <button type="button" class="view-name-btn" onclick="alert('Tên quản lý đầy đủ cho chip {{ chip_id }}:\n\n{{ info.username if info.username else 'Chưa đặt tên' }}')">🔍 Xem</button>
                         </div>
                     </td>
                     <td>
