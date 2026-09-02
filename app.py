@@ -254,7 +254,7 @@ ADMIN_HTML = """
                 <div class="form-row">
                     <div class="form-col">
                         <label>Chip ID phần cứng:</label>
-                        <input type="text" name="chip_id" placeholder="Ví dụ: ESP32_A1B2C3" required>
+                        <input type="text" name="chip_id" placeholder="Ví dụ: 686868" required>
                     </div>
                     <div class="form-col">
                         <label>Tên khách hàng / Thiết bị (Tối đa 20 ký tự):</label>
@@ -276,7 +276,7 @@ ADMIN_HTML = """
             <table>
                 <tr>
                     <th>Chip ID</th>
-                    <th>Tên Quản Lý (Tối đa 20 ký tự)</th>
+                    <th>Tên Quản Lý</th>
                     <th>Trạng Thái</th>
                     <th>Ngày Hết Hạn</th>
                     <th>Trạng Thái OTA</th>
