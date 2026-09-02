@@ -36,10 +36,10 @@ try:
 except Exception as e:
     print(f">>> LỖI KẾT NỐI MONGODB: {e} <<<")
 
-# --- CẤU HÌNH GITHUB OAUTH ---
-GITHUB_CLIENT_ID = "Ov23liD2PKCxgNkZfUj5"
-GITHUB_CLIENT_SECRET = "158a74d6beed0ed201ad9a7c4a041738d3185eb6"
-YOUR_GITHUB_USERNAME = "PinyinCode"
+# --- CẤU HÌNH GITHUB OAUTH (LẤY TỪ BIẾN MÔI TRƯỜNG ĐỂ DỄ THAY ĐỔI) ---
+GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "Ov23liD2PKCxgNkZfUj5")
+GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "158a74d6beed0ed201ad9a7c4a041738d3185eb6")
+YOUR_GITHUB_USERNAME = os.environ.get("GITHUB_USERNAME", "PinyinCode")
 
 DEFAULT_FIRMWARE_URL = "https://esp32-linkdownload.onrender.com/xiaozhi.bin"
 DEFAULT_LATEST_VERSION = "v1.1.0"
