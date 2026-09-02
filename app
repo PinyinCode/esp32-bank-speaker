@@ -50,21 +50,11 @@ def get_device(chip_id):
         if devices_collection is not None and chip_id:
             doc = devices_collection.find_one({"_id": chip_id})
             if doc:
-                expires_at_str = doc.get("expires_at", "")
-                status = doc.get("status", "active")
-                if expires_at_str:
-                    try:
-                        expiry_time = datetime.fromisoformat(expires_at_str)
-                        if datetime.utcnow() > expiry_time:
-                            status = "expired"
-                    except Exception:
-                        pass
-
                 return {
                     "chip_id": doc.get("_id", ""),
                     "username": doc.get("username", ""),
-                    "status": status,
-                    "expires_at": expires_at_str,
+                    "status": doc.get("status", "active"),
+                    "expires_at": doc.get("expires_at", ""),
                     "trial": doc.get("trial", False),
                     "ota_pending": doc.get("ota_pending", False),
                     "created_at": doc.get("created_at", ""),
@@ -243,8 +233,6 @@ ADMIN_HTML = """
         .inline-edit input { padding: 7px 10px; font-size: 13px; }
         .inline-edit button { padding: 7px 12px; font-size: 12px; background: #34c759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
         .inline-edit button:hover { background: #28a745; }
-        .view-name-btn { background: #e5e5ea; color: #1d1d1f; border: none; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; transition: background 0.2s; }
-        .view-name-btn:hover { background: #d1d1d6; }
     </style>
 </head>
 <body>
@@ -266,11 +254,11 @@ ADMIN_HTML = """
                 <div class="form-row">
                     <div class="form-col">
                         <label>Chip ID phần cứng:</label>
-                        <input type="text" name="chip_id" placeholder="Ví dụ: ESP32_A1B2C3" required>
+                        <input type="text" name="chip_id" placeholder="Ví dụ: 686868" required>
                     </div>
                     <div class="form-col">
-                        <label>Tên khách hàng / Thiết bị:</label>
-                        <input type="text" name="username" placeholder="Nhập tên quản lý...">
+                        <label>Tên khách hàng / Thiết bị (Tối đa 20 ký tự):</label>
+                        <input type="text" name="username" maxlength="20" placeholder="Nhập tên quản lý...">
                     </div>
                     <div class="form-col">
                         <label>Ngày hết hạn bản quyền:</label>
@@ -298,24 +286,19 @@ ADMIN_HTML = """
                 <tr>
                     <td><code style="background: #f0f0f5; padding: 4px 8px; border-radius: 6px; font-weight: 600;">{{ chip_id }}</code></td>
                     <td>
-                        <div class="inline-edit">
-                            <form action="/admin/update-username/{{ chip_id }}" method="POST" class="inline-edit" style="display:flex; gap:6px;">
-                                <input type="text" name="username" value="{{ info.username }}" placeholder="Tên..." style="max-width: 150px;">
-                                <button type="submit">Lưu</button>
-                            </form>
-                            <button type="button" class="view-name-btn" onclick="alert('Tên quản lý đầy đủ cho chip {{ chip_id }}:\n\n{{ info.username if info.username else 'Chưa đặt tên' }}')">🔍 Xem</button>
-                        </div>
+                        <form action="/admin/update-username/{{ chip_id }}" method="POST" class="inline-edit">
+                            <input type="text" name="username" maxlength="20" value="{{ info.username }}" placeholder="Tên..." style="width: 220px;">
+                            <button type="submit">Lưu</button>
+                        </form>
                     </td>
                     <td>
-                        {% if info.status == 'active' %}
-                            <span class="badge badge-active">Hoạt động</span>
-                        {% else %}
-                            <span class="badge badge-expired">Hết hạn</span>
-                        {% endif %}
+                        <span id="status-badge-{{ chip_id }}" class="badge {% if info.status == 'active' %}badge-active{% else %}badge-expired{% endif %}">
+                            {% if info.status == 'active' %}Hoạt động{% else %}Hết hạn{% endif %}
+                        </span>
                     </td>
                     <td>
                         <form action="/admin/update-expiry/{{ chip_id }}" method="POST" class="inline-edit">
-                            <input type="date" name="expiry_date" value="{{ info.expires_at[:10] if info.expires_at else '' }}" required style="width: 140px;">
+                            <input type="date" name="expiry_date" id="expiry-input-{{ chip_id }}" value="{{ info.expires_at[:10] if info.expires_at else '' }}" required style="width: 140px;" onchange="checkExpiryOnTheFly('{{ chip_id }}')">
                             <button type="submit">Sửa</button>
                         </form>
                     </td>
@@ -335,6 +318,27 @@ ADMIN_HTML = """
             </table>
         </div>
     </div>
+    <script>
+        function checkExpiryOnTheFly(chipId) {
+            const inputEl = document.getElementById('expiry-input-' + chipId);
+            const badgeEl = document.getElementById('status-badge-' + chipId);
+            if (!inputEl || !badgeEl) return;
+
+            const selectedDateVal = inputEl.value;
+            if (!selectedDateVal) return;
+
+            const expiryDate = new Date(selectedDateVal + 'T23:59:59');
+            const now = new Date();
+
+            if (now <= expiryDate) {
+                badgeEl.className = 'badge badge-active';
+                badgeEl.innerText = 'Hoạt động';
+            } else {
+                badgeEl.className = 'badge badge-expired';
+                badgeEl.innerText = 'Hết hạn';
+            }
+        }
+    </script>
 </body>
 </html>
 """
@@ -596,7 +600,7 @@ def admin_add():
         return redirect(url_for("login"))
 
     chip_id = request.form.get("chip_id", "").strip()
-    username = request.form.get("username", "").strip()
+    username = request.form.get("username", "").strip()[:20]
     expiry_date_str = request.form.get("expiry_date")
 
     import uuid
@@ -604,6 +608,11 @@ def admin_add():
     if chip_id and expiry_date_str:
         try:
             expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            
+            # Tính toán trạng thái ngay tại thời điểm lưu dựa trên ngày hết hạn
+            now = datetime.utcnow()
+            status = "active" if now <= expiry_date else "expired"
+
             device = get_device(chip_id)
             sepay_secret = device.get("sepay_secret") if device and device.get("sepay_secret") else f"whsec_{uuid.uuid4().hex}"
 
@@ -611,12 +620,12 @@ def admin_add():
                 device["expires_at"] = expiry_date.isoformat()
                 if username: 
                     device["username"] = username
-                device["status"] = "active"
+                device["status"] = status
                 device["sepay_secret"] = sepay_secret
             else:
                 device = {
                     "username": username,
-                    "status": "active",
+                    "status": status,
                     "expires_at": expiry_date.isoformat(),
                     "trial": False,
                     "ota_pending": False,
@@ -636,7 +645,7 @@ def update_username(chip_id):
     if "user" not in session:
         return redirect(url_for("login"))
     chip_id = chip_id.strip()
-    username = request.form.get("username", "").strip()
+    username = request.form.get("username", "").strip()[:20]
     device = get_device(chip_id)
     if device:
         device["username"] = username
@@ -655,7 +664,13 @@ def update_expiry(chip_id):
     if device and expiry_date_str:
         try:
             expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            
+            # Cập nhật lại trạng thái dựa vào thời gian mới thay đổi
+            now = datetime.utcnow()
+            status = "active" if now <= expiry_date else "expired"
+
             device["expires_at"] = expiry_date.isoformat()
+            device["status"] = status
             save_device(chip_id, device)
         except ValueError:
             pass
@@ -723,13 +738,7 @@ def user_lookup():
         device_info["sepay_secret"] = f"whsec_{uuid.uuid4().hex}"
         save_device(chip_id, device_info)
 
-    now = datetime.utcnow()
-    try:
-        expiry_time = datetime.fromisoformat(device_info["expires_at"])
-    except Exception:
-        expiry_time = now
-
-    status = "active" if now <= expiry_time else "expired"
+    status = device_info.get("status", "active")
     host_url = request.host_url.rstrip("/")
     webhook_url = f"{host_url}/api/bank-webhook/{chip_id}"
 
@@ -759,13 +768,7 @@ def user_request_ota():
     if not device_info:
         return jsonify({"error": "Thiết bị không tồn tại"}), 404
 
-    now = datetime.utcnow()
-    try:
-        expiry_time = datetime.fromisoformat(device_info["expires_at"])
-    except Exception:
-        expiry_time = now
-
-    if now > expiry_time:
+    if device_info.get("status") == "expired":
         return jsonify({"error": "Bản quyền thiết bị đã hết hạn!"}), 403
 
     device_info["ota_pending"] = True
@@ -800,11 +803,9 @@ def check_license():
         }
         save_device(chip_id, device_info)
 
-    expiry_time = datetime.fromisoformat(device_info["expires_at"])
+    status = device_info.get("status", "active")
 
-    if now > expiry_time:
-        device_info["status"] = "expired"
-        save_device(chip_id, device_info)
+    if status == "expired":
         return jsonify(
             {
                 "chip_id": chip_id,
@@ -837,16 +838,10 @@ def check_update():
     if not device_info:
         return jsonify({"update_available": False, "message": "Device not registered."})
 
-    now = datetime.utcnow()
-    try:
-        expiry_time = datetime.fromisoformat(device_info["expires_at"])
-    except Exception:
-        expiry_time = now
-
-    if now > expiry_time:
-        device_info["status"] = "expired"
-        device_info["ota_pending"] = False
-        save_device(chip_id, device_info)
+    if device_info.get("status") == "expired":
+        if device_info.get("ota_pending", False):
+            device_info["ota_pending"] = False
+            save_device(chip_id, device_info)
         return jsonify({"update_available": False, "message": "License expired. Update denied."})
 
     if device_info.get("ota_pending", False):
