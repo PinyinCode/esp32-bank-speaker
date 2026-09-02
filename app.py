@@ -50,11 +50,22 @@ def get_device(chip_id):
         if devices_collection is not None and chip_id:
             doc = devices_collection.find_one({"_id": chip_id})
             if doc:
+                # Kiểm tra và cập nhật trạng thái tự động dựa trên ngày hết hạn
+                expires_at_str = doc.get("expires_at", "")
+                status = doc.get("status", "active")
+                if expires_at_str:
+                    try:
+                        expiry_time = datetime.fromisoformat(expires_at_str)
+                        if datetime.utcnow() > expiry_time:
+                            status = "expired"
+                    except Exception:
+                        pass
+
                 return {
                     "chip_id": doc.get("_id", ""),
                     "username": doc.get("username", ""),
-                    "status": doc.get("status", "active"),
-                    "expires_at": doc.get("expires_at", ""),
+                    "status": status,
+                    "expires_at": expires_at_str,
                     "trial": doc.get("trial", False),
                     "ota_pending": doc.get("ota_pending", False),
                     "created_at": doc.get("created_at", ""),
@@ -81,23 +92,15 @@ def load_db():
             for doc in devices_collection.find():
                 chip_id = doc.get("_id")
                 if chip_id:
-                    devices_dict[chip_id] = {
-                        "chip_id": chip_id,
-                        "username": doc.get("username", ""),
-                        "status": doc.get("status", "active"),
-                        "expires_at": doc.get("expires_at", ""),
-                        "trial": doc.get("trial", False),
-                        "ota_pending": doc.get("ota_pending", False),
-                        "created_at": doc.get("created_at", ""),
-                        "sepay_secret": doc.get("sepay_secret", ""),
-                        "notifications": doc.get("notifications", []),
-                    }
+                    dev = get_device(chip_id)
+                    if dev:
+                        devices_dict[chip_id] = dev
     except Exception as e:
         print(f"Lỗi khi tải danh sách thiết bị: {e}")
     return devices_dict
 
 
-# --- GIAO DIỆN TRANG ĐĂNG NHẬP (CHUẨN APPLE/VERCEL) ---
+# --- GIAO DIỆN TRANG ĐĂNG NHẬP ---
 LOGIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -180,7 +183,7 @@ LOGIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRANG QUẢN TRỊ (DASHBOARD CHUYÊN NGHIỆP) ---
+# --- GIAO DIỆN TRANG QUẢN TRỊ ---
 ADMIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -337,7 +340,7 @@ ADMIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRA CỨU & CẤU HÌNH SEPAY (CHO USER) ---
+# --- GIAO DIỆN TRA CỨU & CẤU HÌNH SEPay ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -530,7 +533,7 @@ USER_PORTAL_HTML = """
 """
 
 
-# --- ROUTE XÁC THỰC & ĐĂNG NHẬP ADMIN ---
+# --- ROUTE XÁC THỰC & ĐĂNG NHẬP GITHUB OAUTH ---
 @app.route("/")
 def home():
     return redirect(url_for("login"))
@@ -569,9 +572,12 @@ def callback():
         headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
     ).json()
 
-    if user_data.get("login", "").lower() == YOUR_GITHUB_USERNAME.lower():
-        session["user"] = user_data.get("login")
+    github_username = user_data.get("login", "")
+    if github_username.lower() == YOUR_GITHUB_USERNAME.lower():
+        session["user"] = github_username
+        # Trở về trang quản trị ngay sau khi đăng nhập GitHub thành công
         return redirect(url_for("admin_panel"))
+    
     return "Truy cập bị từ chối!", 403
 
 
@@ -772,7 +778,7 @@ def user_request_ota():
     return jsonify({"success": True, "message": "Đã kích hoạt chế độ cập nhật OTA."})
 
 
-# --- API DÀNH CHO ESP32 (DÙNG CHIP_ID) ---
+# --- API DÀNH CHO ESP32 ---
 @app.route("/api/check-license", methods=["GET"])
 def check_license():
     chip_id = request.args.get("chip_id", "").strip()
