@@ -97,142 +97,237 @@ def load_db():
     return devices_dict
 
 
-# --- GIAO DIỆN TRANG ĐĂNG NHẬP ---
+# --- GIAO DIỆN TRANG ĐĂNG NHẬP (CHUẨN APPLE/VERCEL) ---
 LOGIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Đăng nhập - Quản lý OTA ESP32</title>
+    <title>Xác thực Hệ thống - ESP32 Manager</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background: #f2f2f7; display: flex; justify-content: center; align-items: center; min-height: 100vh; color: #1c1c1e; }
-        .login-card { background: white; width: 90%; max-width: 420px; padding: 40px 30px; border-radius: 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.06); text-align: center; box-sizing: border-box; }
-        h2 { color: #007aff; font-size: 24px; margin-bottom: 8px; font-weight: 700; }
-        p { color: #8e8e93; font-size: 14px; margin-bottom: 30px; }
-        .github-btn { background: #24292e; color: white; padding: 14px 20px; text-decoration: none; border-radius: 12px; display: block; font-weight: 600; font-size: 15px; transition: background 0.2s; }
-        .github-btn:hover { background: #1b1f23; }
-        .portal-link { display: inline-block; margin-top: 20px; font-size: 14px; color: #007aff; text-decoration: none; font-weight: 500; }
-        .portal-link:hover { text-decoration: underline; }
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; 
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            color: #1d1d1f; 
+        }
+        .login-card { 
+            background: rgba(255, 255, 255, 0.9); 
+            backdrop-filter: blur(20px);
+            width: 90%; 
+            max-width: 420px; 
+            padding: 48px 36px; 
+            border-radius: 28px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.08); 
+            text-align: center; 
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        .icon-box {
+            width: 64px; height: 64px; background: linear-gradient(135deg, #007aff, #00c6ff);
+            border-radius: 20px; display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 24px auto; color: white; font-size: 28px; box-shadow: 0 10px 20px rgba(0,122,255,0.3);
+        }
+        h2 { color: #1d1d1f; font-size: 24px; margin-bottom: 8px; font-weight: 700; letter-spacing: -0.5px; }
+        p { color: #86868b; font-size: 14px; margin-bottom: 32px; line-height: 1.5; }
+        .github-btn { 
+            background: #000000; 
+            color: white; 
+            padding: 16px 20px; 
+            text-decoration: none; 
+            border-radius: 14px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 12px;
+            font-weight: 600; 
+            font-size: 15px; 
+            transition: all 0.3s ease; 
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        }
+        .github-btn:hover { background: #2c2c2e; transform: translateY(-2px); box-shadow: 0 12px 25px rgba(0,0,0,0.2); }
+        .portal-link { 
+            display: inline-block; 
+            margin-top: 24px; 
+            font-size: 14px; 
+            color: #007aff; 
+            text-decoration: none; 
+            font-weight: 500; 
+            transition: color 0.2s;
+        }
+        .portal-link:hover { color: #0056b3; text-decoration: underline; }
     </style>
 </head>
 <body>
     <div class="login-card">
+        <div class="icon-box">⚡</div>
         <h2>Quản Trị ESP32</h2>
-        <p>Vui lòng xác thực tài khoản quản trị hệ thống</p>
-        <a href="/login/authorize" class="github-btn">Đăng nhập bằng GitHub</a>
+        <p>Hệ thống quản lý bản quyền phần cứng và phân phối OTA thông minh.</p>
+        <a href="/login/authorize" class="github-btn">
+            <svg height="20" viewBox="0 0 16 16" width="20" fill="#fff"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+            Đăng nhập bằng GitHub
+        </a>
+        <br>
         <a href="/device-portal" class="portal-link">🔍 Vào cổng tra cứu & cấu hình SePay</a>
     </div>
 </body>
 </html>
 """
 
-# --- GIAO DIỆN TRANG QUẢN TRỊ ---
+# --- GIAO DIỆN TRANG QUẢN TRỊ (DASHBOARD CHUYÊN NGHIỆP) ---
 ADMIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quản lý Bản quyền & OTA ESP32</title>
+    <title>Bảng Điều Khiển Quản Trị - ESP32 OTA</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; background: #f2f2f7; color: #1c1c1e; }
-        .container { max-width: 1200px; margin: auto; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
-        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-        h2 { color: #007aff; margin: 0; font-size: 20px; }
-        .nav-links { display: flex; gap: 10px; align-items: center; }
-        .portal-btn { background: #5856d6; color: white; padding: 8px 14px; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: 600; }
-        .logout-btn { background: #ff3b30; color: white; padding: 8px 14px; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: 600; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; overflow-x: auto; display: block; }
-        th, td { padding: 12px 10px; border-bottom: 1px solid #e5e5ea; text-align: left; font-size: 13px; }
-        th { background: #fafafc; color: #3a3a3c; font-weight: 600; }
-        input, select, button { padding: 8px 10px; margin: 3px 0; border: 1px solid #c7c7cc; border-radius: 8px; font-size: 13px; outline: none; box-sizing: border-box; }
-        input:focus { border-color: #007aff; }
-        button { background: #34c759; color: white; border: none; cursor: pointer; font-weight: 600; }
-        button:hover { background: #28a745; }
-        .ota-btn { background: #007aff; padding: 6px 10px; font-size: 12px; border-radius: 8px; color: white; text-decoration: none; display: inline-block; font-weight: 600; }
-        .ota-active { background: #ffcc00; color: #1c1c1e; font-weight: bold; }
-        .delete-btn { background: #ff3b30; padding: 6px 10px; font-size: 12px; border-radius: 8px; color: white; text-decoration: none; display: inline-block; margin-left: 3px; font-weight: 600; }
-        .form-group { background: #fafafc; border: 1px solid #e5e5ea; padding: 20px; border-radius: 14px; margin-bottom: 25px; }
-        .form-row { display: flex; gap: 15px; flex-wrap: wrap; }
-        .form-col { flex: 1; min-width: 220px; }
-        label { font-size: 12px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 5px; }
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; 
+            background: #f5f5f7; 
+            color: #1d1d1f; 
+        }
+        .container { max-width: 1300px; margin: 40px auto; background: white; padding: 36px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.04); }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; }
+        .brand { display: flex; align-items: center; gap: 14px; }
+        .brand-icon { width: 44px; height: 44px; background: #007aff; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; font-weight: bold; }
+        h2 { color: #1d1d1f; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+        .nav-links { display: flex; gap: 12px; align-items: center; }
+        .btn-base { padding: 10px 18px; text-decoration: none; border-radius: 12px; font-size: 14px; font-weight: 600; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+        .portal-btn { background: #f0f0f5; color: #1d1d1f; }
+        .portal-btn:hover { background: #e5e5ea; }
+        .logout-btn { background: #fff1f0; color: #ff3b30; }
+        .logout-btn:hover { background: #ffe1e0; }
+        
+        .form-group { background: #fafafc; border: 1px solid #eaeaf0; padding: 28px; border-radius: 20px; margin: 30px 0; }
+        .form-group h3 { margin-top: 0; font-size: 16px; color: #1d1d1f; font-weight: 600; margin-bottom: 20px; }
+        .form-row { display: flex; gap: 20px; flex-wrap: wrap; }
+        .form-col { flex: 1; min-width: 240px; }
+        label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 8px; }
+        input, select { width: 100%; padding: 12px 14px; border: 1px solid #d2d2d7; border-radius: 12px; font-size: 14px; outline: none; background: #fff; transition: border-color 0.2s, box-shadow 0.2s; }
+        input:focus { border-color: #007aff; box-shadow: 0 0 0 4px rgba(0,122,255,0.1); }
+        
+        .submit-btn { background: #007aff; color: white; border: none; cursor: pointer; font-weight: 600; padding: 12px 24px; border-radius: 12px; font-size: 14px; transition: background 0.2s; box-shadow: 0 4px 12px rgba(0,122,255,0.2); }
+        .submit-btn:hover { background: #005ec4; }
+
+        .table-container { width: 100%; overflow-x: auto; margin-top: 15px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: 16px 14px; border-bottom: 1px solid #f0f0f5; font-size: 14px; }
+        th { background: #fbfbfd; color: #86868b; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        tr:hover td { background: #fafafc; }
+        
+        .badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-block; }
+        .badge-active { background: #e3fcef; color: #00875a; }
+        .badge-expired { background: #ffebe6; color: #de350b; }
+        
+        .action-btn { padding: 6px 12px; font-size: 12px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block; transition: all 0.2s; }
+        .ota-pending { background: #fff8e1; color: #b78103; border: 1px solid #ffe082; }
+        .ota-trigger { background: #e1f5fe; color: #0288d1; }
+        .ota-trigger:hover { background: #b3e5fc; }
+        .delete-btn { background: #fff5f5; color: #e53935; }
+        .delete-btn:hover { background: #ffebee; }
+        
+        .inline-edit { display: flex; gap: 8px; align-items: center; }
+        .inline-edit input { padding: 8px 10px; font-size: 13px; }
+        .inline-edit button { padding: 8px 12px; font-size: 12px; background: #34c759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }
+        .inline-edit button:hover { background: #28a745; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h2>Quản lý Bản quyền & OTA ESP32 (Chip ID)</h2>
+            <div class="brand">
+                <div class="brand-icon">⚡</div>
+                <h2>Hệ Thống Quản Lý Bản Quyền & OTA ESP32</h2>
+            </div>
             <div class="nav-links">
-                <a href="/device-portal" class="portal-btn" target="_blank">Cổng Tra Cứu (User)</a>
-                <a href="/logout" class="logout-btn">Đăng xuất ({{ user }})</a>
+                <a href="/device-portal" class="btn-base portal-btn" target="_blank">🌐 Cổng Tra Cứu (User)</a>
+                <a href="/logout" class="btn-base logout-btn">🚪 Đăng xuất ({{ user }})</a>
             </div>
         </div>
-        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #e5e5ea;">
         
         <div class="form-group">
-            <h3 style="margin-top: 0; font-size: 15px; color: #1c1c1e;">Thêm hoặc Cập nhật thiết bị mới</h3>
+            <h3>➕ Thêm hoặc Cập nhật thiết bị mới</h3>
             <form action="/admin/add" method="POST">
                 <div class="form-row">
                     <div class="form-col">
-                        <label>Chip ID:</label>
-                        <input type="text" name="chip_id" placeholder="Nhập Chip ID..." required style="width: 100%;">
+                        <label>Chip ID phần cứng:</label>
+                        <input type="text" name="chip_id" placeholder="Ví dụ: ESP32_A1B2C3" required>
                     </div>
                     <div class="form-col">
-                        <label>Tên thiết bị:</label>
-                        <input type="text" name="username" placeholder="Tên quản lý..." style="width: 100%;">
+                        <label>Tên khách hàng / Thiết bị:</label>
+                        <input type="text" name="username" placeholder="Nhập tên quản lý...">
                     </div>
                     <div class="form-col">
-                        <label>Ngày hết hạn:</label>
-                        <input type="date" name="expiry_date" required style="width: 100%;">
+                        <label>Ngày hết hạn bản quyền:</label>
+                        <input type="date" name="expiry_date" required>
                     </div>
                 </div>
-                <br>
-                <button type="submit" style="padding: 10px 20px; border-radius: 10px;">Lưu / Cập nhật thiết bị</button>
+                <div style="margin-top: 20px;">
+                    <button type="submit" class="submit-btn">Lưu / Cập nhật thiết bị</button>
+                </div>
             </form>
         </div>
 
-        <h3 style="font-size: 15px; color: #1c1c1e;">Danh sách thiết bị đã lưu</h3>
-        <table>
-            <tr>
-                <th>Chip ID</th>
-                <th>Tên quản lý</th>
-                <th>Trạng thái</th>
-                <th>Hết hạn</th>
-                <th>OTA</th>
-                <th>Thao tác</th>
-            </tr>
-            {% for chip_id, info in devices.items() %}
-            <tr>
-                <td><b>{{ chip_id }}</b></td>
-                <td>
-                    <form action="/admin/update-username/{{ chip_id }}" method="POST" style="display: flex; gap: 4px; margin: 0;">
-                        <input type="text" name="username" value="{{ info.username }}" placeholder="Tên..." style="flex: 1; font-size: 12px;">
-                        <button type="submit" style="padding: 4px 8px; font-size: 11px;">Lưu</button>
-                    </form>
-                </td>
-                <td style="color: {{ '#34c759' if info.status == 'active' else '#ff3b30' }}; font-weight: 600;">{{ info.status }}</td>
-                <td>{{ info.expires_at[:10] if info.expires_at else '' }}</td>
-                <td>
-                    {% if info.get('ota_pending', False) %}
-                        <span class="ota-btn ota-active" style="padding: 4px 8px; font-size: 11px;">Đang chờ</span>
-                        <a href="/admin/cancel-ota/{{ chip_id }}" style="font-size:11px; color:#ff3b30; text-decoration: none; margin-left: 3px; font-weight: bold;">Hủy</a>
-                    {% else %}
-                        <a href="/admin/trigger-ota/{{ chip_id }}" class="ota-btn" style="padding: 4px 8px; font-size: 11px;">Kích hoạt</a>
-                    {% endif %}
-                </td>
-                <td>
-                    <a href="/admin/delete/{{ chip_id }}" class="delete-btn" onclick="return confirm('Xóa thiết bị này?');" style="padding: 4px 8px; font-size: 11px;">Xóa</a>
-                </td>
-            </tr>
-            {% endfor %}
-        </table>
+        <h3 style="font-size: 18px; color: #1d1d1f; margin-top: 40px; font-weight: 600;">📋 Danh sách thiết bị đã đăng ký</h3>
+        <div class="table-container">
+            <table>
+                <tr>
+                    <th>Chip ID</th>
+                    <th>Tên Quản Lý</th>
+                    <th>Trạng Thái</th>
+                    <th>Hết Hạn</th>
+                    <th>Trạng Thái OTA</th>
+                    <th>Thao Tác</th>
+                </tr>
+                {% for chip_id, info in devices.items() %}
+                <tr>
+                    <td><code style="background: #f0f0f5; padding: 4px 8px; border-radius: 6px; font-weight: 600;">{{ chip_id }}</code></td>
+                    <td>
+                        <form action="/admin/update-username/{{ chip_id }}" method="POST" class="inline-edit">
+                            <input type="text" name="username" value="{{ info.username }}" placeholder="Tên...">
+                            <button type="submit">Lưu</button>
+                        </form>
+                    </td>
+                    <td>
+                        {% if info.status == 'active' %}
+                            <span class="badge badge-active">Hoạt động</span>
+                        {% else %}
+                            <span class="badge badge-expired">Hết hạn</span>
+                        {% endif %}
+                    </td>
+                    <td style="color: #555; font-weight: 500;">{{ info.expires_at[:10] if info.expires_at else '' }}</td>
+                    <td>
+                        {% if info.get('ota_pending', False) %}
+                            <span class="action-btn ota-pending">⏳ Đang chờ OTA</span>
+                            <a href="/admin/cancel-ota/{{ chip_id }}" style="font-size: 12px; color: #ff3b30; text-decoration: none; margin-left: 6px; font-weight: 600;">Hủy</a>
+                        {% else %}
+                            <a href="/admin/trigger-ota/{{ chip_id }}" class="action-btn ota-trigger">🚀 Kích hoạt OTA</a>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/admin/delete/{{ chip_id }}" class="action-btn delete-btn" onclick="return confirm('Bạn có chắc chắn muốn xóa thiết bị này không?');">🗑️ Xóa</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
     </div>
 </body>
 </html>
 """
 
-# --- GIAO DIỆN TRA CỨU CHO USER ---
+# --- GIAO DIỆN TRA CỨU & CẤU HÌNH SEPAY (CHO USER) ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -240,38 +335,72 @@ USER_PORTAL_HTML = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cổng Cấu Hình SePay & Firmware ESP32</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f2f2f7; color: #1c1c1e; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: white; width: 90%; max-width: 440px; padding: 30px; border-radius: 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.06); box-sizing: border-box; text-align: center; }
-        h2 { font-size: 22px; margin-bottom: 8px; color: #007aff; font-weight: 700; }
-        p.subtitle { font-size: 13px; color: #8e8e93; margin-bottom: 25px; }
-        .form-group { margin-bottom: 15px; text-align: left; }
-        label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 5px; }
-        input { width: 100%; padding: 12px; border: 1px solid #c7c7cc; border-radius: 12px; font-size: 14px; box-sizing: border-box; outline: none; background: #fff; }
-        input:focus { border-color: #007aff; }
-        .btn { width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-        .btn:hover { background: #0056b3; }
-        .btn:disabled { background: #b0c4de; cursor: not-allowed; }
-        .btn-green { background: #34c759; margin-top: 15px; }
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
+            color: #1d1d1f; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            margin: 0; 
+            padding: 20px;
+        }
+        .card { 
+            background: rgba(255, 255, 255, 0.95); 
+            backdrop-filter: blur(20px);
+            width: 100%; 
+            max-width: 480px; 
+            padding: 40px 32px; 
+            border-radius: 28px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.08); 
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .icon-box {
+            width: 56px; height: 56px; background: linear-gradient(135deg, #34c759, #28a745);
+            border-radius: 16px; display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 20px auto; color: white; font-size: 24px; box-shadow: 0 8px 16px rgba(52,199,89,0.3);
+        }
+        h2 { font-size: 22px; margin-bottom: 6px; color: #1d1d1f; font-weight: 700; text-align: center; letter-spacing: -0.5px; }
+        p.subtitle { font-size: 14px; color: #86868b; margin-bottom: 28px; text-align: center; }
+        
+        .form-group { margin-bottom: 20px; text-align: left; }
+        label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 8px; }
+        input { width: 100%; padding: 14px; border: 1px solid #d2d2d7; border-radius: 14px; font-size: 14px; outline: none; background: #fff; transition: all 0.2s; }
+        input:focus { border-color: #007aff; box-shadow: 0 0 0 4px rgba(0,122,255,0.1); }
+        
+        .btn { width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 14px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 6px 16px rgba(0,122,255,0.25); }
+        .btn:hover { background: #005ec4; transform: translateY(-1px); }
+        .btn:disabled { background: #b0c4de; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-green { background: #34c759; box-shadow: 0 6px 16px rgba(52,199,89,0.25); margin-top: 15px; }
         .btn-green:hover { background: #28a745; }
-        .result-box { margin-top: 20px; background: #fafafc; border: 1px solid #e5e5ea; border-radius: 16px; padding: 20px; text-align: left; font-size: 13px; display: none; }
-        .result-row { margin: 10px 0; }
-        .status-active { color: #34c759; font-weight: bold; }
-        .status-expired { color: #ff3b30; font-weight: bold; }
-        .copy-row { display: flex; gap: 8px; margin-top: 6px; }
-        .copy-btn { padding: 0 14px; background: #e5e5ea; border: none; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; color: #1c1c1e; }
+        
+        .result-box { margin-top: 24px; background: #fafafc; border: 1px solid #eaeaf0; border-radius: 20px; padding: 24px; text-align: left; font-size: 14px; display: none; }
+        .result-row { margin: 12px 0; display: flex; justify-content: space-between; align-items: center; }
+        .result-row span { color: #86868b; }
+        .result-row b { color: #1d1d1f; }
+        
+        .status-active { color: #00875a; background: #e3fcef; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 12px; }
+        .status-expired { color: #de350b; background: #ffebe6; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 12px; }
+        
+        .copy-row { display: flex; gap: 8px; margin-top: 6px; width: 100%; }
+        .copy-btn { padding: 0 16px; background: #e5e5ea; border: none; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; color: #1d1d1f; transition: background 0.2s; }
         .copy-btn:hover { background: #d1d1d6; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>Cổng Thông Tin Thiết Bị</h2>
-        <p class="subtitle">Nhập Chip ID để Tra cứu & Cập nhật Firmware</p>
+        <div class="icon-box">🔍</div>
+        <h2>Tra Cứu Thiết Bị</h2>
+        <p class="subtitle">Nhập Chip ID để kiểm tra bản quyền và cấu hình SePay Webhook</p>
         
         <div id="searchSection">
             <div class="form-group">
-                <label>Chip ID:</label>
-                <input type="text" id="chipIdInput" placeholder="Ví dụ: A1B2C3D4E5F6">
+                <label>Mã Chip ID phần cứng:</label>
+                <input type="text" id="chipIdInput" placeholder="Ví dụ: ESP32_A1B2C3...">
             </div>
             <button class="btn" id="searchBtn" type="button">Tra cứu thông tin</button>
         </div>
@@ -282,25 +411,25 @@ USER_PORTAL_HTML = """
             <div class="result-row"><span>Trạng thái:</span> <span id="resStatus">-</span></div>
             <div class="result-row"><span>Hết hạn lúc:</span> <b id="resExpiry">-</b></div>
             
-            <hr style="border: 0; border-top: 1px solid #e5e5ea; margin: 15px 0;">
+            <hr style="border: 0; border-top: 1px solid #eaeaf0; margin: 18px 0;">
 
-            <div class="result-row">
+            <div style="margin-top: 10px;">
                 <label>SePay Webhook URL:</label>
                 <div class="copy-row">
                     <input type="text" id="resWebhook" readonly>
-                    <button class="copy-btn" type="button" onclick="copyText('resWebhook')">Copy</button>
+                    <button class="copy-btn" type="button" onclick="copyText('resWebhook')">Sao chép</button>
                 </div>
             </div>
 
-            <div class="result-row" style="margin-top: 12px;">
-                <label>SePay Secret / Key:</label>
+            <div style="margin-top: 14px;">
+                <label>SePay Secret Key:</label>
                 <div class="copy-row">
                     <input type="text" id="resSecret" readonly>
-                    <button class="copy-btn" type="button" onclick="copyText('resSecret')">Copy</button>
+                    <button class="copy-btn" type="button" onclick="copyText('resSecret')">Sao chép</button>
                 </div>
             </div>
             
-            <button id="updateBtn" class="btn btn-green" style="display:none;" type="button">Yêu cầu Cập nhật Firmware</button>
+            <button id="updateBtn" class="btn btn-green" style="display:none;" type="button">🚀 Yêu cầu Cập nhật Firmware OTA</button>
         </div>
     </div>
 
@@ -332,11 +461,11 @@ USER_PORTAL_HTML = """
                         
                         const statusEl = document.getElementById('resStatus');
                         if (data.status === 'active') {
-                            statusEl.innerText = "Hoạt động (Active)";
+                            statusEl.innerText = "Hoạt động";
                             statusEl.className = "status-active";
                             document.getElementById('updateBtn').style.display = "block";
                         } else {
-                            statusEl.innerText = "Đã hết hạn (Expired)";
+                            statusEl.innerText = "Đã hết hạn";
                             statusEl.className = "status-expired";
                             document.getElementById('updateBtn').style.display = "none";
                         }
@@ -383,7 +512,7 @@ USER_PORTAL_HTML = """
             copyText.select();
             copyText.setSelectionRange(0, 9999);
             navigator.clipboard.writeText(copyText.value);
-            alert("Đã sao chép thành công!");
+            alert("Đã sao chép vào bộ nhớ tạm!");
         }
     </script>
 </body>
