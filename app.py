@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import json
 import os
 import certifi
 from flask import (
@@ -36,13 +37,27 @@ try:
 except Exception as e:
     print(f">>> LỖI KẾT NỐI MONGODB: {e} <<<")
 
-# --- CẤU HÌNH GITHUB OAUTH (LẤY TỪ BIẾN MÔI TRƯỜNG ĐỂ DỄ THAY ĐỔI) ---
+# --- CẤU HÌNH GITHUB OAUTH (LẤY TỪ BIẾN MÔI TRƯỜNG) ---
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "Ov23liD2PKCxgNkZfUj5")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "158a74d6beed0ed201ad9a7c4a041738d3185eb6")
 YOUR_GITHUB_USERNAME = os.environ.get("GITHUB_USERNAME", "PinyinCode")
 
-DEFAULT_FIRMWARE_URL = "https://esp32-linkdownload.onrender.com/xiaozhi.bin"
-DEFAULT_LATEST_VERSION = "v1.1.0"
+
+# --- HÀM ĐỌC CẤU HÌNH FIRMWARE TỪ FILE RIÊNG (firmware.json) ---
+def get_firmware_config():
+    try:
+        if os.path.exists("firmware.json"):
+            with open("firmware.json", "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Lỗi đọc file firmware.json: {e}")
+    
+    # Giá trị dự phòng nếu chưa tạo file firmware.json
+    return {
+        "latest_version": "v1.1.0",
+        "firmware_url": "https://esp32-linkdownload.onrender.com/xiaozhi.bin",
+        "changelog": "Cập nhật thành công."
+    }
 
 
 def get_device(chip_id):
@@ -399,12 +414,15 @@ def check_update():
         device_info["ota_pending"] = False
         save_device(chip_id, device_info)
 
+        # Lấy thông tin phiên bản và link tải từ file firmware.json
+        fw_config = get_firmware_config()
+
         return jsonify(
             {
                 "update_available": True,
-                "latest_version": DEFAULT_LATEST_VERSION,
-                "firmware_url": DEFAULT_FIRMWARE_URL,
-                "changelog": "Cập nhật thành công theo yêu cầu hợp lệ.",
+                "latest_version": fw_config.get("latest_version"),
+                "firmware_url": fw_config.get("firmware_url"),
+                "changelog": fw_config.get("changelog"),
             }
         )
 
