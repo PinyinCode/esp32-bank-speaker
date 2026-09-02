@@ -52,7 +52,6 @@ def get_firmware_config():
     except Exception as e:
         print(f"Lỗi đọc file firmware.json: {e}")
     
-    # Giá trị dự phòng nếu chưa tạo file firmware.json
     return {
         "latest_version": "v1.1.0",
         "firmware_url": "https://esp32-linkdownload.onrender.com/xiaozhi.bin",
@@ -65,15 +64,40 @@ def get_device(chip_id):
         if devices_collection is not None and chip_id:
             doc = devices_collection.find_one({"_id": chip_id})
             if doc:
+                ota_pending = doc.get("ota_pending", False)
+                ota_requested_by = doc.get("ota_requested_by", "")
+                ota_requested_at = doc.get("ota_requested_at", "")
+
+                # Nếu là do NGƯỜI DÙNG bấm và quá 30 phút -> Tự động reset về false ngay khi đọc dữ liệu
+                if ota_pending and ota_requested_by == "user" and ota_requested_at:
+                    try:
+                        requested_at = datetime.fromisoformat(ota_requested_at)
+                        if datetime.utcnow() - requested_at > timedelta(minutes=30):
+                            ota_pending = False
+                            ota_requested_by = ""
+                            ota_requested_at = ""
+                            devices_collection.update_one(
+                                {"_id": chip_id},
+                                {
+                                    "$set": {
+                                        "ota_pending": False,
+                                        "ota_requested_by": "",
+                                        "ota_requested_at": "",
+                                    }
+                                },
+                            )
+                    except Exception:
+                        pass
+
                 return {
                     "chip_id": doc.get("_id", ""),
                     "username": doc.get("username", ""),
                     "status": doc.get("status", "active"),
                     "expires_at": doc.get("expires_at", ""),
                     "trial": doc.get("trial", False),
-                    "ota_pending": doc.get("ota_pending", False),
-                    "ota_requested_by": doc.get("ota_requested_by", ""),
-                    "ota_requested_at": doc.get("ota_requested_at", ""),
+                    "ota_pending": ota_pending,
+                    "ota_requested_by": ota_requested_by,
+                    "ota_requested_at": ota_requested_at,
                     "created_at": doc.get("created_at", ""),
                     "sepay_secret": doc.get("sepay_secret", ""),
                     "notifications": doc.get("notifications", []),
@@ -255,7 +279,7 @@ def trigger_ota(chip_id):
     device = get_device(chip_id)
     if device:
         device["ota_pending"] = True
-        device["ota_requested_by"] = "admin"  # Admin kích hoạt -> Không giới hạn thời gian
+        device["ota_requested_by"] = "admin"
         device["ota_requested_at"] = ""
         save_device(chip_id, device)
     return redirect(url_for("admin_panel"))
@@ -346,7 +370,7 @@ def user_request_ota():
         return jsonify({"error": "Bản quyền thiết bị đã hết hạn!"}), 403
 
     device_info["ota_pending"] = True
-    device_info["ota_requested_by"] = "user"  # Người dùng kích hoạt -> Giới hạn 30 phút
+    device_info["ota_requested_by"] = "user"
     device_info["ota_requested_at"] = datetime.utcnow().isoformat()
     save_device(chip_id, device_info)
 
@@ -424,26 +448,8 @@ def check_update():
             save_device(chip_id, device_info)
         return jsonify({"update_available": False, "message": "License expired. Update denied."})
 
-    # Kiểm tra nếu đang có yêu cầu cập nhật OTA
+    # Nếu `get_device` đã tự động reset expired về false thì đoạn này sẽ an toàn tuyệt đối
     if device_info.get("ota_pending", False):
-        requested_by = device_info.get("ota_requested_by", "user")
-        
-        # Nếu do NGƯỜI DÙNG bấm từ cổng công cộng -> Áp dụng giới hạn 30 phút
-        if requested_by == "user":
-            requested_at_str = device_info.get("ota_requested_at")
-            if requested_at_str:
-                try:
-                    requested_at = datetime.fromisoformat(requested_at_str)
-                    if datetime.utcnow() - requested_at > timedelta(minutes=30):
-                        device_info["ota_pending"] = False
-                        device_info["ota_requested_by"] = ""
-                        device_info["ota_requested_at"] = ""
-                        save_device(chip_id, device_info)
-                        return jsonify({"update_available": False, "message": "Yêu cầu OTA từ người dùng đã hết hạn (quá 30 phút)."})
-                except Exception:
-                    pass
-
-        # Nếu do ADMIN bấm từ trang quản trị -> Không giới hạn thời gian, cấp quyền luôn
         device_info["ota_pending"] = False
         device_info["ota_requested_by"] = ""
         device_info["ota_requested_at"] = ""
