@@ -50,7 +50,6 @@ def get_device(chip_id):
         if devices_collection is not None and chip_id:
             doc = devices_collection.find_one({"_id": chip_id})
             if doc:
-                # Kiểm tra và cập nhật trạng thái tự động dựa trên ngày hết hạn
                 expires_at_str = doc.get("expires_at", "")
                 status = doc.get("status", "active")
                 if expires_at_str:
@@ -100,7 +99,7 @@ def load_db():
     return devices_dict
 
 
-# --- GIAO DIỆN TRANG ĐĂNG NHẬP ---
+# --- GIAO DIỆN TRANG ĐĂNG NHẬP (CHUẨN APPLE/VERCEL) ---
 LOGIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -183,7 +182,7 @@ LOGIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRANG QUẢN TRỊ ---
+# --- GIAO DIỆN TRANG QUẢN TRỊ (DASHBOARD CHUYÊN NGHIỆP) ---
 ADMIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -242,9 +241,9 @@ ADMIN_HTML = """
         
         .inline-edit { display: flex; gap: 6px; align-items: center; }
         .inline-edit input { padding: 7px 10px; font-size: 13px; }
-        .inline-edit button { padding: 7px 12px; font-size: 12px; background: #34c759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }
+        .inline-edit button { padding: 7px 12px; font-size: 12px; background: #34c759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
         .inline-edit button:hover { background: #28a745; }
-        .view-name-btn { background: #e5e5ea; color: #1d1d1f; border: none; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; }
+        .view-name-btn { background: #e5e5ea; color: #1d1d1f; border: none; padding: 7px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; transition: background 0.2s; }
         .view-name-btn:hover { background: #d1d1d6; }
     </style>
 </head>
@@ -301,7 +300,7 @@ ADMIN_HTML = """
                     <td>
                         <div class="inline-edit">
                             <form action="/admin/update-username/{{ chip_id }}" method="POST" class="inline-edit" style="display:flex; gap:6px;">
-                                <input type="text" name="username" value="{{ info.username }}" title="{{ info.username }}" placeholder="Tên..." style="max-width: 150px;">
+                                <input type="text" name="username" value="{{ info.username }}" placeholder="Tên..." style="max-width: 150px;">
                                 <button type="submit">Lưu</button>
                             </form>
                             <button type="button" class="view-name-btn" onclick="alert('Tên quản lý đầy đủ cho chip {{ chip_id }}:\\n\\n{{ info.username if info.username else \\'Chưa đặt tên\\' }}')">🔍 Xem</button>
@@ -340,7 +339,7 @@ ADMIN_HTML = """
 </html>
 """
 
-# --- GIAO DIỆN TRA CỨU & CẤU HÌNH SEPay ---
+# --- GIAO DIỆN TRA CỨU & CẤU HÌNH SEPAY (CHO USER) ---
 USER_PORTAL_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -533,7 +532,7 @@ USER_PORTAL_HTML = """
 """
 
 
-# --- ROUTE XÁC THỰC & ĐĂNG NHẬP GITHUB OAUTH ---
+# --- ROUTE XÁC THỰC & ĐĂNG NHẬP ADMIN ---
 @app.route("/")
 def home():
     return redirect(url_for("login"))
@@ -572,12 +571,9 @@ def callback():
         headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
     ).json()
 
-    github_username = user_data.get("login", "")
-    if github_username.lower() == YOUR_GITHUB_USERNAME.lower():
-        session["user"] = github_username
-        # Trở về trang quản trị ngay sau khi đăng nhập GitHub thành công
+    if user_data.get("login", "").lower() == YOUR_GITHUB_USERNAME.lower():
+        session["user"] = user_data.get("login")
         return redirect(url_for("admin_panel"))
-    
     return "Truy cập bị từ chối!", 403
 
 
@@ -778,7 +774,7 @@ def user_request_ota():
     return jsonify({"success": True, "message": "Đã kích hoạt chế độ cập nhật OTA."})
 
 
-# --- API DÀNH CHO ESP32 ---
+# --- API DÀNH CHO ESP32 (DÙNG CHIP_ID) ---
 @app.route("/api/check-license", methods=["GET"])
 def check_license():
     chip_id = request.args.get("chip_id", "").strip()
