@@ -59,6 +59,69 @@ def get_firmware_config():
     }
 
 
+# --- HÀM CHUYỂN SỐ TIỀN THÀNH CHỮ TIẾNG VIỆT TỰ NHIÊN ---
+def number_to_vietnamese_words(n):
+    if n == 0:
+        return "không đồng"
+    
+    units = ["", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín"]
+    
+    def read_block(num):
+        tram = num // 100
+        chuc = (num % 100) // 10
+        donvi = num % 10
+        res = ""
+        
+        if tram > 0:
+            res += units[tram] + " trăm "
+            if chuc == 0 and donvi > 0:
+                res += "lẻ "
+        
+        if chuc > 1:
+            res += units[chuc] + " mươi "
+            if donvi == 1:
+                res += "mốt"
+            elif donvi == 5:
+                res += "lăm"
+            elif donvi > 0:
+                res += units[donvi]
+        elif chuc == 1:
+            res += "mười "
+            if donvi == 5:
+                res += "lăm"
+            elif donvi > 0:
+                res += units[donvi]
+        elif chuc == 0 and tram > 0 and donvi > 0:
+            res += units[donvi]
+        elif chuc == 0 and tram == 0 and donvi > 0:
+            res += units[donvi]
+            
+        return res.strip()
+
+    trieu = n // 1_000_000
+    nghin = (n % 1_000_000) // 1_000
+    tram_donvi = n % 1_000
+    
+    result = []
+    
+    if trieu > 0:
+        result.append(read_block(trieu) + " triệu")
+        
+    if nghin > 0:
+        if trieu > 0 and nghin < 100:
+            result.append("không trăm " + read_block(nghin) + " nghìn" if nghin < 10 else read_block(nghin) + " nghìn")
+        else:
+            result.append(read_block(nghin) + " nghìn")
+            
+    if tram_donvi > 0:
+        if (trieu > 0 or nghin > 0) and tram_donvi < 100:
+            result.append("lẻ " + read_block(tram_donvi))
+        else:
+            result.append(read_block(tram_donvi))
+            
+    return " ".join(result).strip() + " đồng"
+
+
 def get_device(chip_id):
     try:
         if devices_collection is not None and chip_id:
@@ -68,7 +131,7 @@ def get_device(chip_id):
                 ota_requested_by = doc.get("ota_requested_by", "")
                 ota_requested_at = doc.get("ota_requested_at", "")
 
-                # Nếu là do NGƯỜI DÙNG bấm và quá 30 phút -> Tự động reset về false ngay khi đọc dữ liệu
+                # Nếu là do NGƯỜI DÙNG bấm và quá 30 phút -> Tự động reset về false
                 if ota_pending and ota_requested_by == "user" and ota_requested_at:
                     try:
                         requested_at = datetime.fromisoformat(ota_requested_at)
@@ -468,7 +531,7 @@ def check_update():
     return jsonify({"update_available": False})
 
 
-# --- WEBHOOK NHẬN THÔNG BÁO TỪ SEPAY VÀ LƯU VÀO MONGODB ---
+# --- WEBHOOK NHẬN THÔNG BÁO TỪ SEPAY ---
 @app.route("/api/bank-webhook/<path:chip_id>", methods=["POST"])
 def bank_webhook(chip_id):
     if devices_collection is None:
@@ -480,31 +543,28 @@ def bank_webhook(chip_id):
     if not device:
         return jsonify({"success": False, "error": "Chip ID not registered in system"}), 404
 
-    # (Tùy chọn bảo mật) Kiểm tra SePay Secret nếu cấu hình trên SePay gửi qua Header hoặc Token
-    # SePay thường hỗ trợ chuẩn "Apikey <secret>" hoặc Authorization header
+    # Kiểm tra SePay Secret nếu có cấu hình bảo mật header
     auth_header = request.headers.get("Authorization", "")
     expected_secret = device.get("sepay_secret", "")
-    if expected_secret:
-        # Kiểm tra nếu SePay gửi qua header dạng "Apikey whsec_..." hoặc "Bearer whsec_..." hoặc trực tiếp
-        if auth_header:
-            token = auth_header.replace("Apikey ", "").replace("Bearer ", "").strip()
-            if token and token != expected_secret:
-                return jsonify({"success": False, "error": "Unauthorized webhook secret"}), 401
+    if expected_secret and auth_header:
+        token = auth_header.replace("Apikey ", "").replace("Bearer ", "").strip()
+        if token and token != expected_secret:
+            return jsonify({"success": False, "error": "Unauthorized webhook secret"}), 401
 
     data = request.get_json() or {}
-    
-    # Hỗ trợ lấy linh hoạt tên trường số tiền từ SePay (transferAmount hoặc amount)
     amount = data.get("transferAmount") or data.get("amount", 0)
     content = data.get("content", data.get("description", ""))
 
     if amount and float(amount) > 0:
         amount_int = int(float(amount))
-        audio_message = f"Tài khoản của bạn vừa nhận được {amount_int:,} đồng."
+        
+        # Đọc số tiền thành chữ tự nhiên bằng tiếng Việt
+        money_words = number_to_vietnamese_words(amount_int)
+        audio_message = f"Tài khoản của bạn vừa nhận được {money_words}."
 
         if "notifications" not in device or not isinstance(device["notifications"], list):
             device["notifications"] = []
 
-        # Thêm thông báo mới vào danh sách trên MongoDB
         device["notifications"].append(
             {
                 "amount": amount_int,
