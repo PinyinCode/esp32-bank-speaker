@@ -164,6 +164,7 @@ def get_device(chip_id):
                     "created_at": doc.get("created_at", ""),
                     "sepay_secret": doc.get("sepay_secret", ""),
                     "notifications": doc.get("notifications", []),
+                    "history_24h": doc.get("history_24h", []),
                 }
     except Exception as e:
         print(f"Lỗi khi tìm thiết bị {chip_id}: {e}")
@@ -290,6 +291,7 @@ def admin_add():
                     "created_at": datetime.utcnow().isoformat(),
                     "sepay_secret": sepay_secret,
                     "notifications": [],
+                    "history_24h": [],
                 }
             save_device(chip_id, device)
         except ValueError:
@@ -465,6 +467,7 @@ def check_license():
             "created_at": now.isoformat(),
             "sepay_secret": f"whsec_{uuid.uuid4().hex}",
             "notifications": [],
+            "history_24h": [],
         }
         save_device(chip_id, device_info)
 
@@ -531,7 +534,7 @@ def check_update():
     return jsonify({"update_available": False})
 
 
-# --- WEBHOOK NHẬN THÔNG BÁO TỪ SEPAY ---
+# --- WEBHOOK NHẬN THÔNG BÁO TỪ SEPAY & LƯU LỊCH SỬ 24H ---
 @app.route("/api/bank-webhook/<path:chip_id>", methods=["POST"])
 def bank_webhook(chip_id):
     if devices_collection is None:
@@ -557,6 +560,7 @@ def bank_webhook(chip_id):
 
     if amount and float(amount) > 0:
         amount_int = int(float(amount))
+        now_utc = datetime.utcnow()
         
         # Đọc số tiền thành chữ tự nhiên bằng tiếng Việt
         money_words = number_to_vietnamese_words(amount_int)
@@ -564,18 +568,37 @@ def bank_webhook(chip_id):
 
         if "notifications" not in device or not isinstance(device["notifications"], list):
             device["notifications"] = []
+        if "history_24h" not in device or not isinstance(device["history_24h"], list):
+            device["history_24h"] = []
 
+        # 1. Thêm vào hàng đợi đọc loa
         device["notifications"].append(
             {
                 "amount": amount_int,
                 "message": audio_message,
                 "content": content,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": now_utc.isoformat(),
             }
         )
 
+        # 2. Thêm vào lịch sử tổng hợp 24h
+        device["history_24h"].append(
+            {
+                "amount": amount_int,
+                "content": content,
+                "created_at": now_utc.isoformat(),
+            }
+        )
+
+        # 3. Tự động dọn dẹp các giao dịch cũ hơn 24 giờ
+        cutoff_time = now_utc - timedelta(hours=24)
+        device["history_24h"] = [
+            item for item in device["history_24h"] 
+            if datetime.fromisoformat(item["created_at"]) > cutoff_time
+        ]
+
         save_device(chip_id_clean, device)
-        return jsonify({"success": True, "message": "Saved notification successfully"}), 200
+        return jsonify({"success": True, "message": "Saved notification and 24h history successfully"}), 200
 
     return jsonify({"success": False, "error": "Invalid amount"}), 400
 
@@ -610,6 +633,49 @@ def check_bank_audio():
         )
 
     return jsonify({"has_notification": False})
+
+
+# --- API TRA CỨU TỔNG NHẬN TRONG NGÀY (DÀNH CHO MCP) ---
+@app.route("/api/stats/daily-total/<path:chip_id>", methods=["GET"])
+def daily_total(chip_id):
+    chip_id_clean = chip_id.strip()
+    device = get_device(chip_id_clean)
+
+    if not device:
+        return jsonify({"success": False, "error": "Device not found"}), 404
+
+    now_utc = datetime.utcnow()
+    cutoff_time = now_utc - timedelta(hours=24)
+
+    history_24h = device.get("history_24h", [])
+    valid_transactions = []
+    total_amount = 0
+
+    for item in history_24h:
+        try:
+            tx_time = datetime.fromisoformat(item["created_at"])
+            if tx_time > cutoff_time:
+                valid_transactions.append(item)
+                total_amount += item.get("amount", 0)
+        except Exception:
+            pass
+
+    # Cập nhật lại mảng trong DB nếu có phần tử cũ tự động biến mất
+    if len(valid_transactions) != len(history_24h):
+        device["history_24h"] = valid_transactions
+        save_device(chip_id_clean, device)
+
+    return jsonify(
+        {
+            "success": True,
+            "chip_id": chip_id_clean,
+            "username": device.get("username", ""),
+            "total_transactions_in_24h": len(valid_transactions),
+            "total_amount_in_24h": total_amount,
+            "formatted_total_amount": f"{total_amount:,} đồng",
+            "transactions": valid_transactions,
+        }
+    )
 
 
 if __name__ == "__main__":
