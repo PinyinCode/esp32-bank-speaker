@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
+import json
 import os
 import certifi
 from flask import (
     Flask,
     jsonify,
     redirect,
-    render_template_string,
+    render_template,
     request,
     session,
     url_for,
@@ -36,13 +37,26 @@ try:
 except Exception as e:
     print(f">>> LỖI KẾT NỐI MONGODB: {e} <<<")
 
-# --- CẤU HÌNH GITHUB OAUTH ---
-GITHUB_CLIENT_ID = "Ov23liD2PKCxgNkZfUj5"
-GITHUB_CLIENT_SECRET = "158a74d6beed0ed201ad9a7c4a041738d3185eb6"
-YOUR_GITHUB_USERNAME = "PinyinCode"
+# --- CẤU HÌNH GITHUB OAUTH (LẤY TỪ BIẾN MÔI TRƯỜNG) ---
+GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "Ov23liD2PKCxgNkZfUj5")
+GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "158a74d6beed0ed201ad9a7c4a041738d3185eb6")
+YOUR_GITHUB_USERNAME = os.environ.get("GITHUB_USERNAME", "PinyinCode")
 
-DEFAULT_FIRMWARE_URL = "https://esp32-linkdownload.onrender.com/xiaozhi.bin"
-DEFAULT_LATEST_VERSION = "v1.1.0"
+
+# --- HÀM ĐỌC CẤU HÌNH FIRMWARE TỪ FILE RIÊNG (firmware.json) ---
+def get_firmware_config():
+    try:
+        if os.path.exists("firmware.json"):
+            with open("firmware.json", "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Lỗi đọc file firmware.json: {e}")
+    
+    return {
+        "latest_version": "v1.1.0",
+        "firmware_url": "https://esp32-linkdownload.onrender.com/xiaozhi.bin",
+        "changelog": "Cập nhật thành công."
+    }
 
 
 def get_device(chip_id):
@@ -50,13 +64,40 @@ def get_device(chip_id):
         if devices_collection is not None and chip_id:
             doc = devices_collection.find_one({"_id": chip_id})
             if doc:
+                ota_pending = doc.get("ota_pending", False)
+                ota_requested_by = doc.get("ota_requested_by", "")
+                ota_requested_at = doc.get("ota_requested_at", "")
+
+                # Nếu là do NGƯỜI DÙNG bấm và quá 30 phút -> Tự động reset về false ngay khi đọc dữ liệu
+                if ota_pending and ota_requested_by == "user" and ota_requested_at:
+                    try:
+                        requested_at = datetime.fromisoformat(ota_requested_at)
+                        if datetime.utcnow() - requested_at > timedelta(minutes=30):
+                            ota_pending = False
+                            ota_requested_by = ""
+                            ota_requested_at = ""
+                            devices_collection.update_one(
+                                {"_id": chip_id},
+                                {
+                                    "$set": {
+                                        "ota_pending": False,
+                                        "ota_requested_by": "",
+                                        "ota_requested_at": "",
+                                    }
+                                },
+                            )
+                    except Exception:
+                        pass
+
                 return {
                     "chip_id": doc.get("_id", ""),
                     "username": doc.get("username", ""),
                     "status": doc.get("status", "active"),
                     "expires_at": doc.get("expires_at", ""),
                     "trial": doc.get("trial", False),
-                    "ota_pending": doc.get("ota_pending", False),
+                    "ota_pending": ota_pending,
+                    "ota_requested_by": ota_requested_by,
+                    "ota_requested_at": ota_requested_at,
                     "created_at": doc.get("created_at", ""),
                     "sepay_secret": doc.get("sepay_secret", ""),
                     "notifications": doc.get("notifications", []),
@@ -89,453 +130,6 @@ def load_db():
     return devices_dict
 
 
-# --- GIAO DIỆN TRANG ĐĂNG NHẬP (CHUẨN APPLE/VERCEL) ---
-LOGIN_HTML = """
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xác thực Hệ thống - ESP32 Manager</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * { box-sizing: border-box; }
-        body { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            margin: 0; 
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            min-height: 100vh; 
-            color: #1d1d1f; 
-        }
-        .login-card { 
-            background: rgba(255, 255, 255, 0.9); 
-            backdrop-filter: blur(20px);
-            width: 90%; 
-            max-width: 420px; 
-            padding: 48px 36px; 
-            border-radius: 28px; 
-            box-shadow: 0 20px 40px rgba(0,0,0,0.08); 
-            text-align: center; 
-            border: 1px solid rgba(255, 255, 255, 0.4);
-        }
-        .icon-box {
-            width: 64px; height: 64px; background: linear-gradient(135deg, #007aff, #00c6ff);
-            border-radius: 20px; display: flex; align-items: center; justify-content: center;
-            margin: 0 auto 24px auto; color: white; font-size: 28px; box-shadow: 0 10px 20px rgba(0,122,255,0.3);
-        }
-        h2 { color: #1d1d1f; font-size: 24px; margin-bottom: 8px; font-weight: 700; letter-spacing: -0.5px; }
-        p { color: #86868b; font-size: 14px; margin-bottom: 32px; line-height: 1.5; }
-        .github-btn { 
-            background: #000000; 
-            color: white; 
-            padding: 16px 20px; 
-            text-decoration: none; 
-            border-radius: 14px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            gap: 12px;
-            font-weight: 600; 
-            font-size: 15px; 
-            transition: all 0.3s ease; 
-            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-        }
-        .github-btn:hover { background: #2c2c2e; transform: translateY(-2px); box-shadow: 0 12px 25px rgba(0,0,0,0.2); }
-        .portal-link { 
-            display: inline-block; 
-            margin-top: 24px; 
-            font-size: 14px; 
-            color: #007aff; 
-            text-decoration: none; 
-            font-weight: 500; 
-            transition: color 0.2s;
-        }
-        .portal-link:hover { color: #0056b3; text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <div class="login-card">
-        <div class="icon-box">⚡</div>
-        <h2>Quản Trị ESP32</h2>
-        <p>Hệ thống quản lý bản quyền phần cứng và phân phối OTA thông minh.</p>
-        <a href="/login/authorize" class="github-btn">
-            <svg height="20" viewBox="0 0 16 16" width="20" fill="#fff"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
-            Đăng nhập bằng GitHub
-        </a>
-        <br>
-        <a href="/device-portal" class="portal-link">🔍 Vào cổng tra cứu & cấu hình SePay</a>
-    </div>
-</body>
-</html>
-"""
-
-# --- GIAO DIỆN TRANG QUẢN TRỊ (DASHBOARD CHUYÊN NGHIỆP) ---
-ADMIN_HTML = """
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bảng Điều Khiển Quản Trị - ESP32 OTA</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * { box-sizing: border-box; }
-        body { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            margin: 0; 
-            background: #f5f5f7; 
-            color: #1d1d1f; 
-        }
-        .container { max-width: 1350px; margin: 40px auto; background: white; padding: 36px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.04); }
-        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; }
-        .brand { display: flex; align-items: center; gap: 14px; }
-        .brand-icon { width: 44px; height: 44px; background: #007aff; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; font-weight: bold; }
-        h2 { color: #1d1d1f; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
-        .nav-links { display: flex; gap: 12px; align-items: center; }
-        .btn-base { padding: 10px 18px; text-decoration: none; border-radius: 12px; font-size: 14px; font-weight: 600; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
-        .portal-btn { background: #f0f0f5; color: #1d1d1f; }
-        .portal-btn:hover { background: #e5e5ea; }
-        .logout-btn { background: #fff1f0; color: #ff3b30; }
-        .logout-btn:hover { background: #ffe1e0; }
-        
-        .form-group { background: #fafafc; border: 1px solid #eaeaf0; padding: 28px; border-radius: 20px; margin: 30px 0; }
-        .form-group h3 { margin-top: 0; font-size: 16px; color: #1d1d1f; font-weight: 600; margin-bottom: 20px; }
-        .form-row { display: flex; gap: 20px; flex-wrap: wrap; }
-        .form-col { flex: 1; min-width: 240px; }
-        label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 8px; }
-        input, select { width: 100%; padding: 12px 14px; border: 1px solid #d2d2d7; border-radius: 12px; font-size: 14px; outline: none; background: #fff; transition: border-color 0.2s, box-shadow 0.2s; }
-        input:focus { border-color: #007aff; box-shadow: 0 0 0 4px rgba(0,122,255,0.1); }
-        
-        .submit-btn { background: #007aff; color: white; border: none; cursor: pointer; font-weight: 600; padding: 12px 24px; border-radius: 12px; font-size: 14px; transition: background 0.2s; box-shadow: 0 4px 12px rgba(0,122,255,0.2); }
-        .submit-btn:hover { background: #005ec4; }
-
-        .table-container { width: 100%; overflow-x: auto; margin-top: 15px; }
-        table { width: 100%; border-collapse: collapse; text-align: left; }
-        th, td { padding: 16px 14px; border-bottom: 1px solid #f0f0f5; font-size: 14px; vertical-align: middle; }
-        th { background: #fbfbfd; color: #86868b; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-        tr:hover td { background: #fafafc; }
-        
-        .badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-block; }
-        .badge-active { background: #e3fcef; color: #00875a; }
-        .badge-expired { background: #ffebe6; color: #de350b; }
-        
-        .action-btn { padding: 6px 12px; font-size: 12px; border-radius: 8px; text-decoration: none; font-weight: 600; display: inline-block; transition: all 0.2s; }
-        .ota-pending { background: #fff8e1; color: #b78103; border: 1px solid #ffe082; }
-        .ota-trigger { background: #e1f5fe; color: #0288d1; }
-        .ota-trigger:hover { background: #b3e5fc; }
-        .delete-btn { background: #fff5f5; color: #e53935; }
-        .delete-btn:hover { background: #ffebee; }
-        
-        .inline-edit { display: flex; gap: 6px; align-items: center; }
-        .inline-edit input { padding: 7px 10px; font-size: 13px; }
-        .inline-edit button { padding: 7px 12px; font-size: 12px; background: #34c759; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition: background 0.2s; }
-        .inline-edit button:hover { background: #28a745; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div class="brand">
-                <div class="brand-icon">⚡</div>
-                <h2>Hệ Thống Quản Lý Bản Quyền & OTA ESP32</h2>
-            </div>
-            <div class="nav-links">
-                <a href="/device-portal" class="btn-base portal-btn" target="_blank">🌐 Cổng Tra Cứu (User)</a>
-                <a href="/logout" class="btn-base logout-btn">🚪 Đăng xuất ({{ user }})</a>
-            </div>
-        </div>
-        
-        <div class="form-group">
-            <h3>➕ Thêm hoặc Cập nhật thiết bị mới</h3>
-            <form action="/admin/add" method="POST">
-                <div class="form-row">
-                    <div class="form-col">
-                        <label>Chip ID phần cứng:</label>
-                        <input type="text" name="chip_id" placeholder="Ví dụ: 686868" required>
-                    </div>
-                    <div class="form-col">
-                        <label>Tên khách hàng / Thiết bị (Tối đa 20 ký tự):</label>
-                        <input type="text" name="username" maxlength="20" placeholder="Nhập tên quản lý...">
-                    </div>
-                    <div class="form-col">
-                        <label>Ngày hết hạn bản quyền:</label>
-                        <input type="date" name="expiry_date" required>
-                    </div>
-                </div>
-                <div style="margin-top: 20px;">
-                    <button type="submit" class="submit-btn">Lưu / Cập nhật thiết bị</button>
-                </div>
-            </form>
-        </div>
-
-        <h3 style="font-size: 18px; color: #1d1d1f; margin-top: 40px; font-weight: 600;">📋 Danh sách thiết bị đã đăng ký</h3>
-        <div class="table-container">
-            <table>
-                <tr>
-                    <th>Chip ID</th>
-                    <th>Tên Quản Lý</th>
-                    <th>Trạng Thái</th>
-                    <th>Ngày Hết Hạn</th>
-                    <th>Trạng Thái OTA</th>
-                    <th>Thao Tác</th>
-                </tr>
-                {% for chip_id, info in devices.items() %}
-                <tr>
-                    <td><code style="background: #f0f0f5; padding: 4px 8px; border-radius: 6px; font-weight: 600;">{{ chip_id }}</code></td>
-                    <td>
-                        <form action="/admin/update-username/{{ chip_id }}" method="POST" class="inline-edit">
-                            <input type="text" name="username" maxlength="20" value="{{ info.username }}" placeholder="Tên..." style="width: 220px;">
-                            <button type="submit">Lưu</button>
-                        </form>
-                    </td>
-                    <td>
-                        <span id="status-badge-{{ chip_id }}" class="badge {% if info.status == 'active' %}badge-active{% else %}badge-expired{% endif %}">
-                            {% if info.status == 'active' %}Hoạt động{% else %}Hết hạn{% endif %}
-                        </span>
-                    </td>
-                    <td>
-                        <form action="/admin/update-expiry/{{ chip_id }}" method="POST" class="inline-edit">
-                            <input type="date" name="expiry_date" id="expiry-input-{{ chip_id }}" value="{{ info.expires_at[:10] if info.expires_at else '' }}" required style="width: 140px;" onchange="checkExpiryOnTheFly('{{ chip_id }}')">
-                            <button type="submit">Sửa</button>
-                        </form>
-                    </td>
-                    <td>
-                        {% if info.get('ota_pending', False) %}
-                            <span class="action-btn ota-pending">⏳ Đang chờ OTA</span>
-                            <a href="/admin/cancel-ota/{{ chip_id }}" style="font-size: 12px; color: #ff3b30; text-decoration: none; margin-left: 6px; font-weight: 600;">Hủy</a>
-                        {% else %}
-                            <a href="/admin/trigger-ota/{{ chip_id }}" class="action-btn ota-trigger">🚀 Kích hoạt OTA</a>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <a href="/admin/delete/{{ chip_id }}" class="action-btn delete-btn" onclick="return confirm('Bạn có chắc chắn muốn xóa thiết bị này không?');">🗑️ Xóa</a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </table>
-        </div>
-    </div>
-    <script>
-        function checkExpiryOnTheFly(chipId) {
-            const inputEl = document.getElementById('expiry-input-' + chipId);
-            const badgeEl = document.getElementById('status-badge-' + chipId);
-            if (!inputEl || !badgeEl) return;
-
-            const selectedDateVal = inputEl.value;
-            if (!selectedDateVal) return;
-
-            const expiryDate = new Date(selectedDateVal + 'T23:59:59');
-            const now = new Date();
-
-            if (now <= expiryDate) {
-                badgeEl.className = 'badge badge-active';
-                badgeEl.innerText = 'Hoạt động';
-            } else {
-                badgeEl.className = 'badge badge-expired';
-                badgeEl.innerText = 'Hết hạn';
-            }
-        }
-    </script>
-</body>
-</html>
-"""
-
-# --- GIAO DIỆN TRA CỨU & CẤU HÌNH SEPAY (CHO USER) ---
-USER_PORTAL_HTML = """
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cổng Cấu Hình SePay & Firmware ESP32</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * { box-sizing: border-box; }
-        body { 
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
-            color: #1d1d1f; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            min-height: 100vh; 
-            margin: 0; 
-            padding: 20px;
-        }
-        .card { 
-            background: rgba(255, 255, 255, 0.95); 
-            backdrop-filter: blur(20px);
-            width: 100%; 
-            max-width: 480px; 
-            padding: 40px 32px; 
-            border-radius: 28px; 
-            box-shadow: 0 20px 40px rgba(0,0,0,0.08); 
-            border: 1px solid rgba(255, 255, 255, 0.5);
-        }
-        .icon-box {
-            width: 56px; height: 56px; background: linear-gradient(135deg, #34c759, #28a745);
-            border-radius: 16px; display: flex; align-items: center; justify-content: center;
-            margin: 0 auto 20px auto; color: white; font-size: 24px; box-shadow: 0 8px 16px rgba(52,199,89,0.3);
-        }
-        h2 { font-size: 22px; margin-bottom: 6px; color: #1d1d1f; font-weight: 700; text-align: center; letter-spacing: -0.5px; }
-        p.subtitle { font-size: 14px; color: #86868b; margin-bottom: 28px; text-align: center; }
-        
-        .form-group { margin-bottom: 20px; text-align: left; }
-        label { font-size: 13px; font-weight: 600; color: #3a3a3c; display: block; margin-bottom: 8px; }
-        input { width: 100%; padding: 14px; border: 1px solid #d2d2d7; border-radius: 14px; font-size: 14px; outline: none; background: #fff; transition: all 0.2s; }
-        input:focus { border-color: #007aff; box-shadow: 0 0 0 4px rgba(0,122,255,0.1); }
-        
-        .btn { width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 14px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 6px 16px rgba(0,122,255,0.25); }
-        .btn:hover { background: #005ec4; transform: translateY(-1px); }
-        .btn:disabled { background: #b0c4de; cursor: not-allowed; transform: none; box-shadow: none; }
-        .btn-green { background: #34c759; box-shadow: 0 6px 16px rgba(52,199,89,0.25); margin-top: 15px; }
-        .btn-green:hover { background: #28a745; }
-        
-        .result-box { margin-top: 24px; background: #fafafc; border: 1px solid #eaeaf0; border-radius: 20px; padding: 24px; text-align: left; font-size: 14px; display: none; }
-        .result-row { margin: 12px 0; display: flex; justify-content: space-between; align-items: center; }
-        .result-row span { color: #86868b; }
-        .result-row b { color: #1d1d1f; }
-        
-        .status-active { color: #00875a; background: #e3fcef; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 12px; }
-        .status-expired { color: #de350b; background: #ffebe6; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 12px; }
-        
-        .copy-row { display: flex; gap: 8px; margin-top: 6px; width: 100%; }
-        .copy-btn { padding: 0 16px; background: #e5e5ea; border: none; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; color: #1d1d1f; transition: background 0.2s; }
-        .copy-btn:hover { background: #d1d1d6; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <div class="icon-box">🔍</div>
-        <h2>Tra Cứu Thiết Bị</h2>
-        <p class="subtitle">Nhập Chip ID để kiểm tra bản quyền và cấu hình SePay Webhook</p>
-        
-        <div id="searchSection">
-            <div class="form-group">
-                <label>Mã Chip ID phần cứng:</label>
-                <input type="text" id="chipIdInput" placeholder="Ví dụ: ESP32_A1B2C3...">
-            </div>
-            <button class="btn" id="searchBtn" type="button">Tra cứu thông tin</button>
-        </div>
-
-        <div id="resultCard" class="result-box">
-            <div class="result-row"><span>Tên thiết bị:</span> <b id="resName">-</b></div>
-            <div class="result-row"><span>Chip ID:</span> <b id="resChipId">-</b></div>
-            <div class="result-row"><span>Trạng thái:</span> <span id="resStatus">-</span></div>
-            <div class="result-row"><span>Hết hạn lúc:</span> <b id="resExpiry">-</b></div>
-            
-            <hr style="border: 0; border-top: 1px solid #eaeaf0; margin: 18px 0;">
-
-            <div style="margin-top: 10px;">
-                <label>SePay Webhook URL:</label>
-                <div class="copy-row">
-                    <input type="text" id="resWebhook" readonly>
-                    <button class="copy-btn" type="button" onclick="copyText('resWebhook')">Sao chép</button>
-                </div>
-            </div>
-
-            <div style="margin-top: 14px;">
-                <label>SePay Secret Key:</label>
-                <div class="copy-row">
-                    <input type="text" id="resSecret" readonly>
-                    <button class="copy-btn" type="button" onclick="copyText('resSecret')">Sao chép</button>
-                </div>
-            </div>
-            
-            <button id="updateBtn" class="btn btn-green" style="display:none;" type="button">🚀 Yêu cầu Cập nhật Firmware OTA</button>
-        </div>
-    </div>
-
-    <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            document.getElementById('searchBtn').addEventListener('click', async function() {
-                let chipId = document.getElementById('chipIdInput').value.trim();
-                
-                if (!chipId) {
-                    alert('Vui lòng nhập Chip ID!');
-                    return;
-                }
-
-                const btn = this;
-                btn.disabled = true;
-                btn.innerText = "Đang tra cứu...";
-
-                try {
-                    const response = await fetch('/api/user/lookup', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ chip_id: chipId })
-                    });
-                    const data = await response.json();
-
-                    if (response.ok) {
-                        document.getElementById('resName').innerText = data.username || "Chưa đặt tên";
-                        document.getElementById('resChipId').innerText = data.chip_id || chipId;
-                        
-                        const statusEl = document.getElementById('resStatus');
-                        if (data.status === 'active') {
-                            statusEl.innerText = "Hoạt động";
-                            statusEl.className = "status-active";
-                            document.getElementById('updateBtn').style.display = "block";
-                        } else {
-                            statusEl.innerText = "Đã hết hạn";
-                            statusEl.className = "status-expired";
-                            document.getElementById('updateBtn').style.display = "none";
-                        }
-
-                        document.getElementById('resExpiry').innerText = new Date(data.expires_at).toLocaleString('vi-VN');
-                        document.getElementById('resWebhook').value = data.webhook_url || "";
-                        document.getElementById('resSecret').value = data.sepay_secret || "";
-                        document.getElementById('resultCard').style.display = "block";
-                    } else {
-                        alert("Lỗi: " + (data.error || "Không tìm thấy thiết bị hoặc sai thông tin."));
-                    }
-                } catch (e) {
-                    alert("Lỗi kết nối: " + e.message);
-                } finally {
-                    btn.disabled = false;
-                    btn.innerText = "Tra cứu thông tin";
-                }
-            });
-
-            document.getElementById('updateBtn').addEventListener('click', async function() {
-                let chipId = document.getElementById('chipIdInput').value.trim();
-                if (!chipId) return;
-
-                try {
-                    const response = await fetch('/api/user/request-ota', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ chip_id: chipId })
-                    });
-                    const data = await response.json();
-                    if (response.ok) {
-                        alert("✓ Đã kích hoạt chế độ cập nhật OTA thành công!");
-                    } else {
-                        alert("Lỗi: " + (data.error || "Không thể kích hoạt cập nhật."));
-                    }
-                } catch (e) {
-                    alert("Lỗi kết nối khi gửi yêu cầu OTA.");
-                }
-            });
-        });
-
-        function copyText(elementId) {
-            const copyText = document.getElementById(elementId);
-            copyText.select();
-            copyText.setSelectionRange(0, 9999);
-            navigator.clipboard.writeText(copyText.value);
-            alert("Đã sao chép vào bộ nhớ tạm!");
-        }
-    </script>
-</body>
-</html>
-"""
-
-
 # --- ROUTE XÁC THỰC & ĐĂNG NHẬP ADMIN ---
 @app.route("/")
 def home():
@@ -546,7 +140,7 @@ def home():
 def login():
     if "user" in session:
         return redirect(url_for("admin_panel"))
-    return render_template_string(LOGIN_HTML)
+    return render_template("login.html")
 
 
 @app.route("/login/authorize")
@@ -591,7 +185,7 @@ def logout():
 def admin_panel():
     if "user" not in session:
         return redirect(url_for("login"))
-    return render_template_string(ADMIN_HTML, devices=load_db(), user=session["user"])
+    return render_template("admin.html", devices=load_db(), user=session["user"])
 
 
 @app.route("/admin/add", methods=["POST"])
@@ -609,7 +203,6 @@ def admin_add():
         try:
             expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
             
-            # Tính toán trạng thái ngay tại thời điểm lưu dựa trên ngày hết hạn
             now = datetime.utcnow()
             status = "active" if now <= expiry_date else "expired"
 
@@ -629,6 +222,8 @@ def admin_add():
                     "expires_at": expiry_date.isoformat(),
                     "trial": False,
                     "ota_pending": False,
+                    "ota_requested_by": "",
+                    "ota_requested_at": "",
                     "created_at": datetime.utcnow().isoformat(),
                     "sepay_secret": sepay_secret,
                     "notifications": [],
@@ -665,7 +260,6 @@ def update_expiry(chip_id):
         try:
             expiry_date = datetime.strptime(expiry_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
             
-            # Cập nhật lại trạng thái dựa vào thời gian mới thay đổi
             now = datetime.utcnow()
             status = "active" if now <= expiry_date else "expired"
 
@@ -685,6 +279,8 @@ def trigger_ota(chip_id):
     device = get_device(chip_id)
     if device:
         device["ota_pending"] = True
+        device["ota_requested_by"] = "admin"
+        device["ota_requested_at"] = ""
         save_device(chip_id, device)
     return redirect(url_for("admin_panel"))
 
@@ -697,6 +293,8 @@ def cancel_ota(chip_id):
     device = get_device(chip_id)
     if device:
         device["ota_pending"] = False
+        device["ota_requested_by"] = ""
+        device["ota_requested_at"] = ""
         save_device(chip_id, device)
     return redirect(url_for("admin_panel"))
 
@@ -717,7 +315,7 @@ def admin_delete(chip_id):
 # --- CỔNG TRA CỨU CÔNG KHAI ---
 @app.route("/device-portal", methods=["GET"])
 def device_portal():
-    return render_template_string(USER_PORTAL_HTML)
+    return render_template("user_portal.html")
 
 
 @app.route("/api/user/lookup", methods=["POST"])
@@ -772,12 +370,14 @@ def user_request_ota():
         return jsonify({"error": "Bản quyền thiết bị đã hết hạn!"}), 403
 
     device_info["ota_pending"] = True
+    device_info["ota_requested_by"] = "user"
+    device_info["ota_requested_at"] = datetime.utcnow().isoformat()
     save_device(chip_id, device_info)
 
-    return jsonify({"success": True, "message": "Đã kích hoạt chế độ cập nhật OTA."})
+    return jsonify({"success": True, "message": "Đã kích hoạt chế độ cập nhật OTA. Vui lòng khởi động lại thiết bị trong vòng 30 phút."})
 
 
-# --- API DÀNH CHO ESP32 (DÙNG CHIP_ID) ---
+# --- API DÀNH CHO ESP32 ---
 @app.route("/api/check-license", methods=["GET"])
 def check_license():
     chip_id = request.args.get("chip_id", "").strip()
@@ -797,6 +397,8 @@ def check_license():
             "expires_at": expiry_date.isoformat(),
             "trial": True,
             "ota_pending": False,
+            "ota_requested_by": "",
+            "ota_requested_at": "",
             "created_at": now.isoformat(),
             "sepay_secret": f"whsec_{uuid.uuid4().hex}",
             "notifications": [],
@@ -841,19 +443,26 @@ def check_update():
     if device_info.get("status") == "expired":
         if device_info.get("ota_pending", False):
             device_info["ota_pending"] = False
+            device_info["ota_requested_by"] = ""
+            device_info["ota_requested_at"] = ""
             save_device(chip_id, device_info)
         return jsonify({"update_available": False, "message": "License expired. Update denied."})
 
+    # Nếu `get_device` đã tự động reset expired về false thì đoạn này sẽ an toàn tuyệt đối
     if device_info.get("ota_pending", False):
         device_info["ota_pending"] = False
+        device_info["ota_requested_by"] = ""
+        device_info["ota_requested_at"] = ""
         save_device(chip_id, device_info)
+
+        fw_config = get_firmware_config()
 
         return jsonify(
             {
                 "update_available": True,
-                "latest_version": DEFAULT_LATEST_VERSION,
-                "firmware_url": DEFAULT_FIRMWARE_URL,
-                "changelog": "Cập nhật thành công theo yêu cầu hợp lệ.",
+                "latest_version": fw_config.get("latest_version"),
+                "firmware_url": fw_config.get("firmware_url"),
+                "changelog": fw_config.get("changelog"),
             }
         )
 
