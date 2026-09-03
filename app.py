@@ -665,6 +665,10 @@ def daily_total(chip_id):
         device["history_24h"] = valid_transactions
         save_device(chip_id_clean, device)
 
+    # Chuyển tổng tiền thành câu chữ chuẩn "Hôm nay bạn đã nhận được... đồng"
+    money_words = number_to_vietnamese_words(total_amount)
+    stat_message = f"Hôm nay bạn đã nhận được {money_words}."
+
     return jsonify(
         {
             "success": True,
@@ -673,6 +677,7 @@ def daily_total(chip_id):
             "total_transactions_in_24h": len(valid_transactions),
             "total_amount_in_24h": total_amount,
             "formatted_total_amount": f"{total_amount:,} đồng",
+            "message": stat_message,  # Thêm trường message thông báo chuẩn
             "transactions": valid_transactions,
         }
     )
