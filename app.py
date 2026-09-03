@@ -448,7 +448,6 @@ def check_update():
             save_device(chip_id, device_info)
         return jsonify({"update_available": False, "message": "License expired. Update denied."})
 
-    # Nếu `get_device` đã tự động reset expired về false thì đoạn này sẽ an toàn tuyệt đối
     if device_info.get("ota_pending", False):
         device_info["ota_pending"] = False
         device_info["ota_requested_by"] = ""
@@ -469,6 +468,7 @@ def check_update():
     return jsonify({"update_available": False})
 
 
+# --- WEBHOOK NHẬN THÔNG BÁO TỪ SEPAY VÀ LƯU VÀO MONGODB ---
 @app.route("/api/bank-webhook/<path:chip_id>", methods=["POST"])
 def bank_webhook(chip_id):
     if devices_collection is None:
@@ -480,8 +480,22 @@ def bank_webhook(chip_id):
     if not device:
         return jsonify({"success": False, "error": "Chip ID not registered in system"}), 404
 
+    # (Tùy chọn bảo mật) Kiểm tra SePay Secret nếu cấu hình trên SePay gửi qua Header hoặc Token
+    # SePay thường hỗ trợ chuẩn "Apikey <secret>" hoặc Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    expected_secret = device.get("sepay_secret", "")
+    if expected_secret:
+        # Kiểm tra nếu SePay gửi qua header dạng "Apikey whsec_..." hoặc "Bearer whsec_..." hoặc trực tiếp
+        if auth_header:
+            token = auth_header.replace("Apikey ", "").replace("Bearer ", "").strip()
+            if token and token != expected_secret:
+                return jsonify({"success": False, "error": "Unauthorized webhook secret"}), 401
+
     data = request.get_json() or {}
-    amount = data.get("transferAmount", 0)
+    
+    # Hỗ trợ lấy linh hoạt tên trường số tiền từ SePay (transferAmount hoặc amount)
+    amount = data.get("transferAmount") or data.get("amount", 0)
+    content = data.get("content", data.get("description", ""))
 
     if amount and float(amount) > 0:
         amount_int = int(float(amount))
@@ -490,16 +504,18 @@ def bank_webhook(chip_id):
         if "notifications" not in device or not isinstance(device["notifications"], list):
             device["notifications"] = []
 
+        # Thêm thông báo mới vào danh sách trên MongoDB
         device["notifications"].append(
             {
                 "amount": amount_int,
                 "message": audio_message,
+                "content": content,
                 "created_at": datetime.utcnow().isoformat(),
             }
         )
 
         save_device(chip_id_clean, device)
-        return jsonify({"success": True}), 200
+        return jsonify({"success": True, "message": "Saved notification successfully"}), 200
 
     return jsonify({"success": False, "error": "Invalid amount"}), 400
 
